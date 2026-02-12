@@ -60,6 +60,8 @@ router.post('/auth/change-password', AuthController.changePassword);
 if ((UserController as any).me) router.get('/users/me', (UserController as any).me);
 if ((UserController as any).updateMe)
 	router.put('/users/me', upload.single('profile_picture'), (UserController as any).updateMe);
+// Chat - mensajes directos entre usuarios (DM)
+router.get('/chat/dm/:userId', ChatController.listDmWithUser);
 // Pedidos/Visitas del usuario autenticado (móvil)
 if ((VisitController as any).createForMe) router.post('/visits/mine', (VisitController as any).createForMe);
 if ((VisitController as any).listMine) router.get('/visits/mine', (VisitController as any).listMine);

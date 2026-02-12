@@ -13,6 +13,11 @@ export const env = {
 	frontendOrigins: (process.env.FRONTEND_ORIGINS ?? 'http://localhost:3000')
 		.split(',')
 		.map((s) => s.trim()),
+	// Rate limit
+	rateLimitWindowMs: process.env.RATE_LIMIT_WINDOW_MS ? Number(process.env.RATE_LIMIT_WINDOW_MS) : 15 * 60 * 1000,
+	rateLimitMax: process.env.RATE_LIMIT_MAX ? Number(process.env.RATE_LIMIT_MAX) : 100,
+	rateLimitEnabled: process.env.RATE_LIMIT_ENABLED ? String(process.env.RATE_LIMIT_ENABLED).toLowerCase() !== 'false' : true,
+	rateLimitSkipPaths: (process.env.RATE_LIMIT_SKIP_PATHS ?? '/health,/api/quotations,/api/chat').split(',').map((s) => s.trim()).filter(Boolean),
 	// Email (SMTP) – opcional; si no está configurado, sendEmail hará no-op
 	mailSmtpHost: process.env.MAIL_SMTP_HOST,
 	mailSmtpPort: process.env.MAIL_SMTP_PORT ? Number(process.env.MAIL_SMTP_PORT) : undefined,

@@ -6,6 +6,7 @@ import { ChatMessageModel } from '../models/chatMessage.model';
 import { QuotationModel } from '../models/quotation.model';
 import { UserModel } from '../models/user.model';
 import { sendEmail } from '../utils/mailer';
+import { DmMessageModel, buildParticipantsPair } from '../models/dmMessage.model';
 
 interface JwtPayload {
 	id: string;
@@ -102,6 +103,50 @@ export function initSocket(server: HttpServer) {
 				socket.join(room);
 				joinedRooms.add(room);
 			})().catch(() => {});
+		});
+
+		// Direct messages (user to user)
+		socket.on('dm:join', ({ userId: otherUserId }: { userId: string }) => {
+			try {
+				if (!otherUserId) return;
+				const [a, b] = buildParticipantsPair(user.id, otherUserId);
+				const room = `dm:${String(a)}:${String(b)}`;
+				socket.join(room);
+				joinedRooms.add(room);
+			} catch {
+				// ignore
+			}
+		});
+
+		socket.on('dm:message', async (payload: { toUserId: string; message: string }) => {
+			try {
+				if (!payload?.toUserId || !payload?.message) return;
+				const [a, b] = buildParticipantsPair(user.id, payload.toUserId);
+				const room = `dm:${String(a)}:${String(b)}`;
+				const msg = await DmMessageModel.create({
+					participants: [a, b],
+					sender: user.id,
+					message: payload.message,
+				});
+				// Emit to both participants' room
+				socket.to(room).emit('dm:message', {
+					_id: String(msg._id),
+					from: user.id,
+					to: payload.toUserId,
+					message: payload.message,
+					sentAt: msg.sentAt,
+				});
+				// Also emit back to sender for confirmation (if needed on client)
+				socket.emit('dm:message', {
+					_id: String(msg._id),
+					from: user.id,
+					to: payload.toUserId,
+					message: payload.message,
+					sentAt: msg.sentAt,
+				});
+			} catch (_e) {
+				// ignore
+			}
 		});
 
 		socket.on('chat:message', async (payload: { quotationId: string; message: string }) => {
