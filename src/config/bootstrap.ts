@@ -42,6 +42,7 @@ export async function ensureCoreData(): Promise<void> {
     services: ['view', 'create', 'update', 'delete'],
     quotations: ['view', 'update'],
     sales: ['view'],
+    dashboard: ['view'],
     permissions: ['view'],
     visits: ['view'],
   };

@@ -15,6 +15,7 @@ import { verifyRole } from '../middlewares/verifyRole';
 import { QuotationController } from '../controllers/quotation.controller';
 import { ChatController } from '../controllers/chat.controller';
 import { upload } from '../utils/cloudinary';
+import { DashboardController } from '../controllers/dashboard.controller';
 
 const router = Router();
 
@@ -70,6 +71,9 @@ if (UserController.update) router.put('/users/:id', upload.single('profile_pictu
 // Adjuntar imágenes a un pedido existente (propietario)
 if ((OrderController as any).addAttachments)
 	router.post('/orders/:id/attachments', upload.array('product_images', 10), (OrderController as any).addAttachments);
+
+// Dashboard (solo admin)
+router.get('/dashboard', verifyRole('dashboard', 'view'), DashboardController.get);
 
 mountCrud('roles', RoleController);
 mountCrud('users', UserController);

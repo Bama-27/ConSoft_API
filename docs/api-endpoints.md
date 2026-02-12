@@ -69,6 +69,11 @@ Autenticación para móviles (React Native)
 - PUT `/api/visits/:id`
 - DELETE `/api/visits/:id`
 
+Notas de agendamiento
+- Al crear una visita (`POST /api/visits` y `POST /api/visits/mine`), el backend aplica un bloqueo automático:
+  - Una visita ocupa un bloque de 3 horas desde `visitDate` (la hora elegida + las próximas 2 horas).
+  - Si intentas agendar otra visita que se solape con ese bloque, la API responde `409` con `{ message: 'Time slot not available' }`.
+
 ### Pedidos (permiso: orders.view/create/update/delete)
 - GET `/api/orders` → lista con totales calculados (sin “pagados”)
 - GET `/api/orders/:id` → detalle con totales y `restante`
@@ -85,6 +90,17 @@ Autenticación para móviles (React Native)
 
 ### Ventas (permiso: sales.view)
 - GET `/api/sales` → pedidos con `restante <= 0` (pagados)
+
+### Dashboard (permiso: dashboard.view)
+- GET `/api/dashboard` → métricas para Medición y Desempeño (solo admin)
+  - Query params (opcionales):
+    - `from`: fecha inicio (ej. `2026-01-01`)
+    - `to`: fecha fin (ej. `2026-12-31`)
+    - `limit`: top de productos/servicios (default 10, max 50)
+  - Devuelve:
+    - `summary`: { totalRevenue, totalSales, totalUsers }
+    - `series`: { monthly, quarterly, semiannual }
+    - `topItems`: { products, services } (ranking por cantidad)
 
 ### Cotizaciones
 Autenticado por cookie. Permisos finos para admin en listAll/quote.
