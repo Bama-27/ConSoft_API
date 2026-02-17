@@ -16,6 +16,7 @@ import { QuotationController } from '../controllers/quotation.controller';
 import { ChatController } from '../controllers/chat.controller';
 import { upload } from '../utils/cloudinary';
 import { DashboardController } from '../controllers/dashboard.controller';
+import { optionalAuth } from '../middlewares/optionalAuth';
 
 const router = Router();
 
@@ -51,6 +52,7 @@ if (ProductController.list) router.get('/products', ProductController.list);
 if (ProductController.get) router.get('/products/:id', ProductController.get);
 if (ServiceController.list) router.get('/services', ServiceController.list);
 if (ServiceController.get) router.get('/services/:id', ServiceController.get);
+if ((VisitController as any).createForMe) router.post('/visits/mine', optionalAuth, (VisitController as any).createForMe);
 
 // === RUTAS PROTEGIDAS === //
 router.use(verifyToken);
@@ -63,7 +65,6 @@ if ((UserController as any).updateMe)
 // Chat - mensajes directos entre usuarios (DM)
 router.get('/chat/dm/:userId', ChatController.listDmWithUser);
 // Pedidos/Visitas del usuario autenticado (móvil)
-if ((VisitController as any).createForMe) router.post('/visits/mine', (VisitController as any).createForMe);
 if ((VisitController as any).listMine) router.get('/visits/mine', (VisitController as any).listMine);
 if (ProductController.create)
 	router.post('/products', upload.single('image'), ProductController.create);

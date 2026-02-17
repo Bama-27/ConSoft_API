@@ -59,30 +59,124 @@ export const VisitController = {
 	},
 
 	// Crear visita para el usuario autenticado
+	// ✅ Controlador actualizado - Soporta usuarios autenticados y no autenticados
 	createForMe: async (req: AuthRequest, res: Response) => {
 		try {
-			const userId = req.user?.id;
-			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-			const { visitDate, address, status, services } = req.body ?? {};
-			if (!visitDate) return res.status(400).json({ message: 'visitDate is required' });
+			const userId = req.user?.id; // ✅ Ahora es opcional
+			const {
+				visitDate,
+				visitTime,
+				address,
+				status,
+				services,
+				// ✅ Nuevos campos para usuarios no autenticados
+				userName,
+				userEmail,
+				userPhone,
+				description,
+			} = req.body ?? {};
+
+			// ✅ Validación de fecha
+			if (!visitDate) {
+				return res.status(400).json({ message: 'visitDate is required' });
+			}
+
 			const parsedVisitDate = parseVisitDate(visitDate);
-			if (!parsedVisitDate) return res.status(400).json({ message: 'visitDate is invalid' });
+			if (!parsedVisitDate) {
+				return res.status(400).json({ message: 'visitDate is invalid' });
+			}
+
+			// ✅ Validación de dirección
 			if (!address || typeof address !== 'string' || !address.trim()) {
 				return res.status(400).json({ message: 'address is required' });
 			}
+
+			// ✅ Si NO hay usuario autenticado, validar datos de contacto
+			if (!userId) {
+				if (!userName || typeof userName !== 'string' || !userName.trim()) {
+					return res
+						.status(400)
+						.json({ message: 'userName is required for guest visits' });
+				}
+
+				if (!userEmail || typeof userEmail !== 'string' || !userEmail.trim()) {
+					return res
+						.status(400)
+						.json({ message: 'userEmail is required for guest visits' });
+				}
+
+				// ✅ Validación de email
+				const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+				if (!emailRegex.test(userEmail)) {
+					return res.status(400).json({ message: 'Invalid email format' });
+				}
+
+				if (!userPhone || typeof userPhone !== 'string' || !userPhone.trim()) {
+					return res
+						.status(400)
+						.json({ message: 'userPhone is required for guest visits' });
+				}
+			}
+
+			// ✅ Verificar disponibilidad de horario
 			await assertNoVisitOverlap(parsedVisitDate);
+
+			// ✅ Construir payload dependiendo si hay usuario autenticado o no
 			const payload: any = {
-				user: new Types.ObjectId(String(userId)),
 				visitDate: parsedVisitDate,
+				visitTime: visitTime || null, // ✅ Hora de la visita
 				address: address.trim(),
 				status: status && typeof status === 'string' ? status : 'pendiente',
 				services: Array.isArray(services) ? services.filter(Boolean) : [],
+				description:
+					description && typeof description === 'string' ? description.trim() : undefined,
 			};
+
+			// ✅ Si hay usuario autenticado, asociar la visita
+			if (userId) {
+				payload.user = new Types.ObjectId(String(userId));
+			} else {
+				// ✅ Si NO hay usuario, guardar datos de contacto directamente
+				payload.guestInfo = {
+					name: userName.trim(),
+					email: userEmail.trim(),
+					phone: userPhone.trim(),
+				};
+				payload.isGuest = true; // ✅ Marcador para identificar visitas de invitados
+			}
+
+			// ✅ Crear la visita
 			const created = await VisitModel.create(payload);
-			const populated = await created.populate('user', 'name email').then(d => d.populate('services', 'name description'));
-			return res.status(201).json({ ok: true, visit: populated });
+
+			// ✅ Popular dependiendo del tipo de visita
+			let populated;
+			if (userId) {
+				// Usuario autenticado: popular user y services
+				populated = await created
+					.populate('user', 'name email')
+					.then((d) => d.populate('services', 'name description'));
+			} else {
+				// Usuario invitado: solo popular services
+				populated = await created.populate('services', 'name description');
+			}
+
+			// ✅ Opcional: Enviar email de confirmación
+			// await sendVisitConfirmationEmail(
+			//   userId ? populated.user.email : userEmail,
+			//   populated
+			// );
+
+			return res.status(201).json({
+				ok: true,
+				visit: populated,
+				message: userId
+					? 'Visit created successfully'
+					: 'Visit created successfully. We will contact you soon.',
+			});
 		} catch (e) {
 			const err: any = e;
+
+			// ✅ Manejo de conflictos de horario
 			if (err?.status === 409) {
 				return res.status(409).json({
 					message: 'Time slot not available',
@@ -90,7 +184,12 @@ export const VisitController = {
 					conflictVisitDate: err.conflictVisitDate,
 				});
 			}
-			return res.status(500).json({ error: 'Error creating visit' });
+
+			console.error('Error creating visit:', err);
+			return res.status(500).json({
+				error: 'Error creating visit',
+				message: 'An unexpected error occurred. Please try again.',
+			});
 		}
 	},
 

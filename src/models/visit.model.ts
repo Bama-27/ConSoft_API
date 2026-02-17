@@ -1,28 +1,109 @@
-import { Schema, model, Types, InferSchemaType } from 'mongoose';
+// models/Visit.ts
+import { Schema, model, Types } from 'mongoose';
 
-const VisitSchema = new Schema(
+interface IGuestInfo {
+	name: string;
+	email: string;
+	phone: string;
+}
+
+interface IVisit {
+	user?: Types.ObjectId; // ✅ Ahora es opcional
+	visitDate: Date;
+	visitTime?: string; // ✅ Nuevo: hora de la visita
+	address: string;
+	status: string;
+	services: Types.ObjectId[];
+	description?: string; // ✅ Nuevo: descripción opcional
+	isGuest?: boolean; // ✅ Nuevo: marca si es visita de invitado
+	guestInfo?: IGuestInfo; // ✅ Nuevo: info de contacto para invitados
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+const guestInfoSchema = new Schema(
 	{
-		user: { type: Types.ObjectId, ref: 'User', required: true },
-		visitDate: { type: Date, required: true },
-		address: { type: String, required: true, trim: true },
-		status: { type: String, required: true, trim: true },
-		services: {
-			type: [
-				{
-					type: Types.ObjectId,
-					required: true,
-					ref: 'Servicio',
-				},
-			],
-			default: [],
-		},
+		name: String,
+		email: String,
+		phone: String,
 	},
-	{ collection: 'visitas' }
+	{ _id: false },
 );
 
-// Índices para consultas comunes
-VisitSchema.index({ user: 1, visitDate: -1 });
-VisitSchema.index({ status: 1, visitDate: -1 });
-VisitSchema.index({ services: 1 });
+const visitSchema = new Schema<IVisit>(
+	{
+		user: {
+			type: Schema.Types.ObjectId,
+			ref: 'User',
+			required: false, // ✅ Ya no es obligatorio
+		},
+		visitDate: {
+			type: Date,
+			required: true,
+		},
+		visitTime: {
+			type: String,
+			required: false,
+		},
+		address: {
+			type: String,
+			required: true,
+			trim: true,
+		},
+		status: {
+			type: String,
+			enum: ['pendiente', 'confirmada', 'en_progreso', 'completada', 'cancelada'],
+			default: 'pendiente',
+		},
+		services: [
+			{
+				type: Schema.Types.ObjectId,
+				ref: 'Servicio',
+			},
+		],
+		description: {
+			type: String,
+			trim: true,
+		},
+		isGuest: {
+			type: Boolean,
+			default: false,
+		},
+		guestInfo: {
+			type: guestInfoSchema,
+			required: false,
+		},
+	},
+	{
+		timestamps: true,
+	},
+);
 
-export const VisitModel = model('Visit', VisitSchema);
+visitSchema.pre('validate', function (next) {
+	const visit = this as IVisit;
+
+	// caso invitado
+	if (visit.isGuest) {
+		if (!visit.guestInfo?.name || !visit.guestInfo?.email || !visit.guestInfo?.phone) {
+			return next(new Error('Guest info is required when isGuest=true'));
+		}
+		visit.user = undefined;
+	}
+	// caso usuario logueado
+	else {
+		if (!visit.user) {
+			return next(new Error('User is required when isGuest=false'));
+		}
+		visit.guestInfo = undefined;
+	}
+
+	next();
+});
+
+// ✅ Índices para optimizar búsquedas
+visitSchema.index({ visitDate: 1 });
+visitSchema.index({ user: 1 });
+visitSchema.index({ 'guestInfo.email': 1 });
+visitSchema.index({ status: 1 });
+
+export const VisitModel = model<IVisit>('Visit', visitSchema);
