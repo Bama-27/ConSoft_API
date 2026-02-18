@@ -4,8 +4,8 @@ import { createCrudController } from './crud.controller';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { Types } from 'mongoose';
 import { sendEmail } from '../utils/mailer';
-import { templateService } from '../services/template.service';
 import { IUser } from '../types/interfaces';
+import { templateService } from '../services/template.service';
 
 const base = createCrudController(VisitModel);
 
