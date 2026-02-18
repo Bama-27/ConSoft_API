@@ -1,15 +1,19 @@
 import { Request, Response } from 'express';
-import { VisitModel } from '../models/visit.model';
+import { IVisit, VisitModel } from '../models/visit.model';
 import { createCrudController } from './crud.controller';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { Types } from 'mongoose';
+import { sendEmail } from '../utils/mailer';
+import { templateService } from '../services/template.service';
+import { IUser } from '../types/interfaces';
 
 const base = createCrudController(VisitModel);
 
-function parseVisitDate(value: unknown): Date | null {
-	if (value == null) return null;
-	const d = new Date(String(value));
-	return Number.isNaN(d.getTime()) ? null : d;
+function parseVisitDateTime(dateValue: unknown, timeValue: unknown): Date | null {
+	if (!dateValue || !timeValue) return null;
+
+	const combined = new Date(`${dateValue}T${timeValue}`);
+	return Number.isNaN(combined.getTime()) ? null : combined;
 }
 
 function addHours(date: Date, hours: number): Date {
@@ -58,113 +62,144 @@ export const VisitController = {
 		return res.json(visit);
 	},
 
-	// Crear visita para el usuario autenticado
-	// ✅ Controlador actualizado - Soporta usuarios autenticados y no autenticados
 	createForMe: async (req: AuthRequest, res: Response) => {
 		try {
-			const userId = req.user?.id; // ✅ Ahora es opcional
+			console.log(req.user);
+			const userId = req.user?.id;
+			console.log(userId);
 			const {
 				visitDate,
 				visitTime,
 				address,
 				status,
 				services,
-				// ✅ Nuevos campos para usuarios no autenticados
 				userName,
 				userEmail,
 				userPhone,
 				description,
 			} = req.body ?? {};
 
-			// ✅ Validación de fecha
+			// -------------------------
+			// VALIDACIONES
+			// -------------------------
+
 			if (!visitDate) {
 				return res.status(400).json({ message: 'visitDate is required' });
 			}
 
-			const parsedVisitDate = parseVisitDate(visitDate);
+			const parsedVisitDate = parseVisitDateTime(visitDate, visitTime);
 			if (!parsedVisitDate) {
 				return res.status(400).json({ message: 'visitDate is invalid' });
 			}
 
-			// ✅ Validación de dirección
 			if (!address || typeof address !== 'string' || !address.trim()) {
 				return res.status(400).json({ message: 'address is required' });
 			}
 
-			// ✅ Si NO hay usuario autenticado, validar datos de contacto
+			// Validación guest
 			if (!userId) {
-				if (!userName || typeof userName !== 'string' || !userName.trim()) {
+				if (!userName?.trim()) {
 					return res
 						.status(400)
 						.json({ message: 'userName is required for guest visits' });
 				}
 
-				if (!userEmail || typeof userEmail !== 'string' || !userEmail.trim()) {
+				if (!userEmail?.trim()) {
 					return res
 						.status(400)
 						.json({ message: 'userEmail is required for guest visits' });
 				}
 
-				// ✅ Validación de email
 				const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 				if (!emailRegex.test(userEmail)) {
 					return res.status(400).json({ message: 'Invalid email format' });
 				}
 
-				if (!userPhone || typeof userPhone !== 'string' || !userPhone.trim()) {
+				if (!userPhone?.trim()) {
 					return res
 						.status(400)
 						.json({ message: 'userPhone is required for guest visits' });
 				}
 			}
 
-			// ✅ Verificar disponibilidad de horario
 			await assertNoVisitOverlap(parsedVisitDate);
 
-			// ✅ Construir payload dependiendo si hay usuario autenticado o no
-			const payload: any = {
+			// -------------------------
+			// CONSTRUCCIÓN DEL PAYLOAD
+			// -------------------------
+
+			const payload: Partial<IVisit> = {
 				visitDate: parsedVisitDate,
-				visitTime: visitTime || null, // ✅ Hora de la visita
+				visitTime: visitTime || undefined,
 				address: address.trim(),
-				status: status && typeof status === 'string' ? status : 'pendiente',
+				status: typeof status === 'string' ? status : 'pendiente',
 				services: Array.isArray(services) ? services.filter(Boolean) : [],
-				description:
-					description && typeof description === 'string' ? description.trim() : undefined,
+				description: typeof description === 'string' ? description.trim() : undefined,
 			};
 
-			// ✅ Si hay usuario autenticado, asociar la visita
 			if (userId) {
-				payload.user = new Types.ObjectId(String(userId));
+				payload.user = new Types.ObjectId(userId);
 			} else {
-				// ✅ Si NO hay usuario, guardar datos de contacto directamente
+				payload.isGuest = true;
 				payload.guestInfo = {
 					name: userName.trim(),
 					email: userEmail.trim(),
 					phone: userPhone.trim(),
 				};
-				payload.isGuest = true; // ✅ Marcador para identificar visitas de invitados
 			}
 
-			// ✅ Crear la visita
+			// -------------------------
+			// CREACIÓN
+			// -------------------------
 			const created = await VisitModel.create(payload);
 
-			// ✅ Popular dependiendo del tipo de visita
-			let populated;
+			await created.populate<{ user: IUser }>('user', 'name email');
+			await created.populate('services', 'name description');
+
+			const populated = created;
+
+			// -------------------------
+			// RESOLUCIÓN DE EMAIL
+			// -------------------------
+
+			let emailTo: string;
+			let userNameForEmail: string;
+
 			if (userId) {
-				// Usuario autenticado: popular user y services
-				populated = await created
-					.populate('user', 'name email')
-					.then((d) => d.populate('services', 'name description'));
+				// Narrowing correcto
+				if (!populated.user || populated.user instanceof Types.ObjectId) {
+					throw new Error('User was not populated correctly');
+				}
+
+				emailTo = populated.user.email;
+				userNameForEmail = populated.user.name;
 			} else {
-				// Usuario invitado: solo popular services
-				populated = await created.populate('services', 'name description');
+				emailTo = userEmail!;
+				userNameForEmail = userName!;
 			}
 
-			// ✅ Opcional: Enviar email de confirmación
-			// await sendVisitConfirmationEmail(
-			//   userId ? populated.user.email : userEmail,
-			//   populated
-			// );
+			// -------------------------
+			// TEMPLATE
+			// -------------------------
+
+			const html = await templateService.render('visit-confirmation', {
+				USER_NAME: userNameForEmail || 'Usuario',
+				VISIT_DATE: parsedVisitDate.toLocaleDateString(),
+				VISIT_TIME: visitTime || 'No especificada',
+				ADDRESS: address,
+				SERVICES: Array.isArray(populated.services)
+					? populated.services.map((s: any) => s.name).join(', ')
+					: '',
+				DESCRIPTION_BLOCK: description ? description : 'Sin descripcion',
+				STATUS: payload.status,
+				YEAR: new Date().getFullYear(),
+			});
+
+			await sendEmail({
+				to: emailTo,
+				subject: 'Confirmación de visita agendada',
+				html,
+			});
 
 			return res.status(201).json({
 				ok: true,
@@ -173,19 +208,16 @@ export const VisitController = {
 					? 'Visit created successfully'
 					: 'Visit created successfully. We will contact you soon.',
 			});
-		} catch (e) {
-			const err: any = e;
-
-			// ✅ Manejo de conflictos de horario
-			if (err?.status === 409) {
+		} catch (e: any) {
+			if (e?.status === 409) {
 				return res.status(409).json({
 					message: 'Time slot not available',
-					conflictVisitId: err.conflictVisitId,
-					conflictVisitDate: err.conflictVisitDate,
+					conflictVisitId: e.conflictVisitId,
+					conflictVisitDate: e.conflictVisitDate,
 				});
 			}
 
-			console.error('Error creating visit:', err);
+			console.error('Error creating visit:', e);
 			return res.status(500).json({
 				error: 'Error creating visit',
 				message: 'An unexpected error occurred. Please try again.',
@@ -194,39 +226,103 @@ export const VisitController = {
 	},
 
 	// Crear visita (admin) con validación de solape
-	create: async (req: Request, res: Response) => {
+	create: async (req: AuthRequest, res: Response) => {
 		try {
-			const { user, visitDate, address, status, services } = req.body ?? {};
-			if (!user) return res.status(400).json({ message: 'user is required' });
-			if (!visitDate) return res.status(400).json({ message: 'visitDate is required' });
-			const parsedVisitDate = parseVisitDate(visitDate);
-			if (!parsedVisitDate) return res.status(400).json({ message: 'visitDate is invalid' });
+			const userId = req.user?.id;
+
+			if (!userId) {
+				return res.status(400).json({ message: 'user is required' });
+			}
+
+			const { visitDate, visitTime, address, status, services, description } = req.body ?? {};
+
+			if (!visitDate) {
+				return res.status(400).json({ message: 'visitDate is required' });
+			}
+
+			const parsedVisitDate = parseVisitDateTime(visitDate, visitTime);
+			if (!parsedVisitDate) {
+				return res.status(400).json({ message: 'visitDate is invalid' });
+			}
+
 			if (!address || typeof address !== 'string' || !address.trim()) {
 				return res.status(400).json({ message: 'address is required' });
 			}
+
 			await assertNoVisitOverlap(parsedVisitDate);
 
+			// -------------------------
+			// CREACIÓN
+			// -------------------------
+
 			const created = await VisitModel.create({
-				user,
+				user: userId,
 				visitDate: parsedVisitDate,
+				visitTime: visitTime || undefined,
 				address: address.trim(),
-				status: status && typeof status === 'string' ? status : 'pendiente',
+				status: typeof status === 'string' ? status : 'pendiente',
 				services: Array.isArray(services) ? services.filter(Boolean) : [],
-			} as any);
-			const populated = await created
-				.populate('user', 'name email')
-				.then((d) => d.populate('services', 'name description'));
-			return res.status(201).json({ ok: true, visit: populated });
-		} catch (e) {
-			const err: any = e;
-			if (err?.status === 409) {
+				description: typeof description === 'string' ? description.trim() : undefined,
+			});
+
+			// Populate correctamente (sin encadenar mal)
+			await created.populate('user', 'name email');
+			await created.populate('services', 'name description');
+
+			const populated = created;
+
+			// -------------------------
+			// ENVÍO DE EMAIL
+			// -------------------------
+
+			if (!populated.user || populated.user instanceof Types.ObjectId) {
+				throw new Error('User was not populated correctly');
+			}
+
+			const emailTo = populated.user.email;
+			const userNameForEmail = populated.user.name;
+
+			const html = await templateService.render('visit-confirmation', {
+				USER_NAME: userNameForEmail || 'Usuario',
+				VISIT_DATE: parsedVisitDate.toLocaleDateString(),
+				VISIT_TIME: visitTime || 'No especificada',
+				ADDRESS: address,
+				SERVICES: Array.isArray(populated.services)
+					? populated.services.map((s: any) => s.name).join(', ')
+					: '',
+				DESCRIPTION_BLOCK: description ? description : 'Sin descripción',
+				STATUS: populated.status,
+				YEAR: new Date().getFullYear(),
+			});
+
+			try {
+				await sendEmail({
+					to: emailTo,
+					subject: 'Confirmación de visita agendada',
+					html,
+				});
+			} catch (mailError) {
+				console.error('Email failed but visit was created:', mailError);
+				// No rompemos la creación si falla el correo
+			}
+
+			return res.status(201).json({
+				ok: true,
+				visit: populated,
+			});
+		} catch (e: any) {
+			if (e?.status === 409) {
 				return res.status(409).json({
 					message: 'Time slot not available',
-					conflictVisitId: err.conflictVisitId,
-					conflictVisitDate: err.conflictVisitDate,
+					conflictVisitId: e.conflictVisitId,
+					conflictVisitDate: e.conflictVisitDate,
 				});
 			}
-			return res.status(500).json({ error: 'Error creating visit' });
+
+			console.error('Error creating visit:', e);
+			return res.status(500).json({
+				error: 'Error creating visit',
+			});
 		}
 	},
 
