@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+	<head>
+		<meta charset="UTF-8" />
+		<title>Confirmación de Visita</title>
+	</head>
+	<body style="margin:0; padding:0; background-color:#f4f6f8;">
+		<table
+			width="100%"
+			cellpadding="0"
+			cellspacing="0"
+			style="background-color:#f4f6f8; padding:40px 0;">
+			<tr>
+				<td align="center">
+					<!-- Card Container -->
+					<table
+						width="600"
+						cellpadding="0"
+						cellspacing="0"
+						style="background:#ffffff; border-radius:10px; overflow:hidden; font-family:Arial, Helvetica, sans-serif; box-shadow:0 4px 12px rgba(0,0,0,0.05);">
+						<!-- Header -->
+						<tr>
+							<td style="background:#8B5E3C; padding:24px; text-align:center;">
+								<h1
+									style="margin:0; font-size:20px; color:#ffffff; font-weight:600;">
+									Confirmación de Visita
+								</h1>
+							</td>
+						</tr>
+
+						<!-- Body -->
+						<tr>
+							<td
+								style="padding:30px; color:#333333; font-size:14px; line-height:1.6;">
+								<p style="margin-top:0;">Hola <strong>{{USER_NAME}}</strong>,</p>
+
+								<p>
+									Tu visita fue agendada correctamente. A continuación encontrarás
+									los detalles:
+								</p>
+
+								<!-- Details Box -->
+								<table
+									width="100%"
+									cellpadding="0"
+									cellspacing="0"
+									style="margin:20px 0; background:#f9fafb; border-radius:8px; padding:20px;">
+									<tr>
+										<td style="padding:6px 0;">
+											<strong>Fecha:</strong> {{VISIT_DATE}}
+										</td>
+									</tr>
+									<tr>
+										<td style="padding:6px 0;">
+											<strong>Hora:</strong> {{VISIT_TIME}}
+										</td>
+									</tr>
+									<tr>
+										<td style="padding:6px 0;">
+											<strong>Dirección:</strong> {{ADDRESS}}
+										</td>
+									</tr>
+									<tr>
+										<td style="padding:6px 0;">
+											<strong>Servicios:</strong> {{SERVICES}}
+										</td>
+									</tr>
+									<tr>
+										<td style="padding:6px 0;">
+											<strong>Estado:</strong>
+											<span style="color:#8B5E3C; font-weight:600;">
+												{{STATUS}}
+											</span>
+										</td>
+									</tr>
+								</table>
+
+								<p>
+									Si necesitas modificar tu visita o tienes alguna consulta, no
+									dudes en contactarnos.
+								</p>
+
+								<p style="margin-bottom:0;">Gracias por confiar en nosotros.</p>
+							</td>
+						</tr>
+
+						<!-- Footer -->
+						<tr>
+							<td
+								style="background:#f1f3f5; padding:20px; text-align:center; font-size:12px; color:#777777;">
+								© {{YEAR}} Confort & Estilo <br />
+								Este es un correo automático, por favor no respondas a este mensaje.
+							</td>
+						</tr>
+					</table>
+					<!-- End Card -->
+				</td>
+			</tr>
+		</table>
+	</body>
+</html>

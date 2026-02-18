@@ -1,22 +1,22 @@
 // models/Visit.ts
 import { Schema, model, Types } from 'mongoose';
-
+import type { IUser } from '../types/interfaces';
 interface IGuestInfo {
 	name: string;
 	email: string;
 	phone: string;
 }
 
-interface IVisit {
-	user?: Types.ObjectId; // ✅ Ahora es opcional
+export interface IVisit {
+	user?: Types.ObjectId | IUser; 
 	visitDate: Date;
-	visitTime?: string; // ✅ Nuevo: hora de la visita
+	visitTime?: string; 
 	address: string;
 	status: string;
 	services: Types.ObjectId[];
-	description?: string; // ✅ Nuevo: descripción opcional
-	isGuest?: boolean; // ✅ Nuevo: marca si es visita de invitado
-	guestInfo?: IGuestInfo; // ✅ Nuevo: info de contacto para invitados
+	description?: string; 
+	isGuest?: boolean; 
+	guestInfo?: IGuestInfo;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -29,6 +29,8 @@ const guestInfoSchema = new Schema(
 	},
 	{ _id: false },
 );
+
+
 
 const visitSchema = new Schema<IVisit>(
 	{
