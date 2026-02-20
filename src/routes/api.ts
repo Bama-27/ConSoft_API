@@ -12,11 +12,11 @@ import { SaleController } from '../controllers/sales.controller';
 import { PermissionController } from '../controllers/permission.controller';
 import { verifyToken } from '../middlewares/auth.middleware';
 import { verifyRole } from '../middlewares/verifyRole';
-import { QuotationController } from '../controllers/quotation.controller';
 import { ChatController } from '../controllers/chat.controller';
 import { upload } from '../utils/cloudinary';
 import { DashboardController } from '../controllers/dashboard.controller';
 import { optionalAuth } from '../middlewares/optionalAuth';
+import { quotationController } from '../controllers/quotation.controller';
 
 const router = Router();
 
@@ -52,7 +52,8 @@ if (ProductController.list) router.get('/products', ProductController.list);
 if (ProductController.get) router.get('/products/:id', ProductController.get);
 if (ServiceController.list) router.get('/services', ServiceController.list);
 if (ServiceController.get) router.get('/services/:id', ServiceController.get);
-if ((VisitController as any).createForMe) router.post('/visits/mine', optionalAuth, (VisitController as any).createForMe);
+if ((VisitController as any).createForMe)
+	router.post('/visits/mine', optionalAuth, (VisitController as any).createForMe);
 
 // === RUTAS PROTEGIDAS === //
 router.use(verifyToken);
@@ -65,15 +66,21 @@ if ((UserController as any).updateMe)
 // Chat - mensajes directos entre usuarios (DM)
 router.get('/chat/dm/:userId', ChatController.listDmWithUser);
 // Pedidos/Visitas del usuario autenticado (móvil)
-if ((VisitController as any).listMine) router.get('/visits/mine', (VisitController as any).listMine);
+if ((VisitController as any).listMine)
+	router.get('/visits/mine', (VisitController as any).listMine);
 if (ProductController.create)
 	router.post('/products', upload.single('image'), ProductController.create);
 if (ServiceController.create)
 	router.post('/services', upload.single('image'), ServiceController.create);
-if (UserController.update) router.put('/users/:id', upload.single('profile_picture'), UserController.update);
+if (UserController.update)
+	router.put('/users/:id', upload.single('profile_picture'), UserController.update);
 // Adjuntar imágenes a un pedido existente (propietario)
 if ((OrderController as any).addAttachments)
-	router.post('/orders/:id/attachments', upload.array('product_images', 10), (OrderController as any).addAttachments);
+	router.post(
+		'/orders/:id/attachments',
+		upload.array('product_images', 10),
+		(OrderController as any).addAttachments,
+	);
 
 // Dashboard (solo admin)
 router.get('/dashboard', verifyRole('dashboard', 'view'), DashboardController.get);
@@ -87,31 +94,46 @@ mountCrud('visits', VisitController);
 // Pedidos del usuario autenticado (sin necesidad de permiso de admin)
 router.get('/orders/mine', OrderController.listMine);
 // crear/consultar pedidos del usuario autenticado sin permisos
-if ((OrderController as any).createForMe) router.post('/orders/mine', upload.array('product_images', 10), (OrderController as any).createForMe);
-if ((OrderController as any).listMine) router.get('/orders/mine', (OrderController as any).listMine);
+if ((OrderController as any).createForMe)
+	router.post(
+		'/orders/mine',
+		upload.array('product_images', 10),
+		(OrderController as any).createForMe,
+	);
+if ((OrderController as any).listMine)
+	router.get('/orders/mine', (OrderController as any).listMine);
 mountCrud('orders', OrderController);
 mountCrud('payments', PaymentController);
 // Pago por OCR de comprobante
-router.post('/orders/:id/payments/ocr', upload.single('payment_image'), PaymentController.createFromReceiptOcr);
+router.post(
+	'/orders/:id/payments/ocr',
+	upload.single('payment_image'),
+	PaymentController.createFromReceiptOcr,
+);
 mountCrud('sales', SaleController);
 mountCrud('permissions', PermissionController);
 
 // === COTIZACIONES (protegidas sólo por autenticación; permisos finos se pueden agregar luego) === //
-router.get('/quotations/mine', QuotationController.listMine);
-router.post('/quotations/cart', QuotationController.createOrGetCart);
-router.post('/quotations/quick', QuotationController.quickCreate);
-router.post('/quotations/:id/items', QuotationController.addItem);
-router.put('/quotations/:id/items/:itemId', QuotationController.updateItem);
-router.delete('/quotations/:id/items/:itemId', QuotationController.removeItem);
-router.post('/quotations/:id/submit', QuotationController.submit);
+router.get('/quotations/mine', quotationController.listMine);
+router.post(
+	'/quotations/cart/custom',
+	upload.single('referenceImage'),
+	quotationController.addCustomItemToCart,
+);
+router.post('/quotations/cart', quotationController.createOrGetCart);
+router.post('/quotations/quick', quotationController.quickCreate);
+router.post('/quotations/:id/items', quotationController.addItem);
+router.put('/quotations/:id/items/:itemId', quotationController.updateItem);
+router.delete('/quotations/:id/items/:itemId', quotationController.removeItem);
+router.post('/quotations/:id/submit', quotationController.submit);
 router.post(
 	'/quotations/:id/quote',
 	verifyRole('quotations', 'update'),
-	QuotationController.adminSetQuote
+	quotationController.adminSetQuote,
 );
-router.post('/quotations/:id/decision', QuotationController.userDecision);
-router.get('/quotations', verifyRole('quotations', 'view'), QuotationController.listAll);
-router.get('/quotations/:id', QuotationController.get);
+router.post('/quotations/:id/decision', quotationController.userDecision);
+router.get('/quotations', verifyRole('quotations', 'view'), quotationController.listAll);
+router.get('/quotations/:id', quotationController.get);
 router.get('/quotations/:quotationId/messages', ChatController.listMessages);
 // Permitir a administradores leer mensajes de cualquier cotización
 // (dueño ya pasa por verificación dentro del controlador)
