@@ -135,6 +135,13 @@ router.post('/quotations/:id/decision', quotationController.userDecision);
 router.get('/quotations', verifyRole('quotations', 'view'), quotationController.listAll);
 router.get('/quotations/:id', quotationController.get);
 router.get('/quotations/:quotationId/messages', ChatController.listMessages);
+// Solo admins
+router.post(
+	'/quotations/admin/create',
+	verifyToken,
+	verifyRole('quotations', 'create'),
+	quotationController.adminCreate,
+);
 // Permitir a administradores leer mensajes de cualquier cotización
 // (dueño ya pasa por verificación dentro del controlador)
 // Nota: esta línea debe ir DESPUÉS de router.use(verifyToken)

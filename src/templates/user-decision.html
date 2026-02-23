@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="es">
+	<head>
+		<meta charset="UTF-8" />
+		<title>Decisión del Cliente</title>
+	</head>
+
+	<body style="margin:0; padding:0; background-color:#f4f6f8;">
+		<table
+			width="100%"
+			cellpadding="0"
+			cellspacing="0"
+			style="background-color:#f4f6f8; padding:40px 0;">
+			<tr>
+				<td align="center">
+					<!-- Card -->
+					<table
+						width="600"
+						cellpadding="0"
+						cellspacing="0"
+						style="background:#ffffff; border-radius:10px; overflow:hidden; font-family:Arial, Helvetica, sans-serif; box-shadow:0 4px 12px rgba(0,0,0,0.05);">
+						<!-- HEADER -->
+						<tr>
+							<td style="background:#8B5E3C; padding:24px; text-align:center;">
+								<div style="font-size:26px; margin-bottom:6px;">
+									{{DECISION_ICON}}
+								</div>
+								<h1
+									style="margin:0; font-size:20px; color:#ffffff; font-weight:600;">
+									Decisión del cliente
+								</h1>
+							</td>
+						</tr>
+
+						<!-- BODY -->
+						<tr>
+							<td
+								style="padding:30px; color:#333333; font-size:14px; line-height:1.6;">
+								<p style="margin-top:0;">
+									Se ha registrado una decisión sobre una cotización en la
+									plataforma.
+								</p>
+
+								<p>
+									<strong>{{USER_NAME}}</strong> ha
+									<strong style="color:{{DECISION_COLOR}};"
+										>{{DECISION_TEXT}}</strong
+									>
+									la cotización.
+								</p>
+
+								<!-- DETAILS -->
+								<table
+									width="100%"
+									cellpadding="0"
+									cellspacing="0"
+									style="margin:20px 0; background:#f9fafb; border-radius:8px; padding:20px;">
+									<tr>
+										<td style="padding:6px 0;">
+											<strong>ID Cotización:</strong>
+											<span style="color:#6b7280; font-family:monospace;">
+												{{QUOTATION_ID}}
+											</span>
+										</td>
+									</tr>
+
+									<tr>
+										<td style="padding:6px 0;">
+											<strong>Cliente:</strong> {{USER_NAME}}
+										</td>
+									</tr>
+
+									<tr>
+										<td style="padding:6px 0;">
+											<strong>Correo:</strong> {{USER_EMAIL}}
+										</td>
+									</tr>
+
+									<tr>
+										<td style="padding:6px 0;">
+											<strong>Fecha:</strong> {{DECISION_DATE}}
+										</td>
+									</tr>
+
+									<tr>
+										<td style="padding:6px 0;">
+											<strong>Decisión:</strong>
+											<span
+												style="margin-left:6px; padding:3px 10px; font-size:12px; font-weight:600; border-radius:6px;
+												background:{{BADGE_BG}}; color:{{BADGE_COLOR}};">
+												{{DECISION_LABEL}}
+											</span>
+										</td>
+									</tr>
+
+									<tr>
+										<td style="padding:6px 0;">
+											<strong>Nuevo estado:</strong> {{NEW_STATUS}}
+										</td>
+									</tr>
+								</table>
+
+								<!-- SYSTEM MESSAGE -->
+								<table
+									width="100%"
+									cellpadding="0"
+									cellspacing="0"
+									style="margin:20px 0; background:#f9fafb; border-left:4px solid {{DECISION_COLOR}}; border-radius:6px;">
+									<tr>
+										<td style="padding:16px; font-size:13px; color:#555;">
+											{{CONDITIONAL_MESSAGE}}
+										</td>
+									</tr>
+								</table>
+
+
+								<p style="font-size:12px; color:#6b7280; margin-bottom:0;">
+									Este correo es informativo para el equipo administrativo.
+								</p>
+							</td>
+						</tr>
+
+						<!-- FOOTER -->
+						<tr>
+							<td
+								style="background:#f1f3f5; padding:20px; text-align:center; font-size:12px; color:#777777;">
+								© {{YEAR}} Confort & Estilo <br />
+								Notificación automática del sistema.
+							</td>
+						</tr>
+					</table>
+				</td>
+			</tr>
+		</table>
+	</body>
+</html>
