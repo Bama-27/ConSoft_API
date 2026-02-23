@@ -57,12 +57,6 @@ const visitSchema = new Schema<IVisit>(
 			enum: ['pendiente', 'confirmada', 'en_progreso', 'completada', 'cancelada'],
 			default: 'pendiente',
 		},
-		services: [
-			{
-				type: Schema.Types.ObjectId,
-				ref: 'Servicio',
-			},
-		],
 		description: {
 			type: String,
 			trim: true,

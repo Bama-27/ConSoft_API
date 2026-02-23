@@ -52,7 +52,6 @@ export const VisitController = {
 	list: async (req: Request, res: Response) => {
 		const visits = await VisitModel.find()
 			.populate('user', 'name email') // ✔ user es un ObjectId
-			.populate('services', 'name description'); // ✔ services es un array de ObjectId
 		return res.json({ ok: true, visits });
 	},
 
@@ -72,7 +71,6 @@ export const VisitController = {
 				visitTime,
 				address,
 				status,
-				services,
 				userName,
 				userEmail,
 				userPhone,
@@ -133,7 +131,6 @@ export const VisitController = {
 				visitTime: visitTime || undefined,
 				address: address.trim(),
 				status: typeof status === 'string' ? status : 'pendiente',
-				services: Array.isArray(services) ? services.filter(Boolean) : [],
 				description: typeof description === 'string' ? description.trim() : undefined,
 			};
 
@@ -154,7 +151,6 @@ export const VisitController = {
 			const created = await VisitModel.create(payload);
 
 			await created.populate<{ user: IUser }>('user', 'name email');
-			await created.populate('services', 'name description');
 
 			const populated = created;
 
@@ -187,9 +183,6 @@ export const VisitController = {
 				VISIT_DATE: parsedVisitDate.toLocaleDateString(),
 				VISIT_TIME: visitTime || 'No especificada',
 				ADDRESS: address,
-				SERVICES: Array.isArray(populated.services)
-					? populated.services.map((s: any) => s.name).join(', ')
-					: '',
 				DESCRIPTION_BLOCK: description ? description : 'Sin descripcion',
 				STATUS: payload.status,
 				YEAR: new Date().getFullYear(),
@@ -234,7 +227,7 @@ export const VisitController = {
 				return res.status(400).json({ message: 'user is required' });
 			}
 
-			const { visitDate, visitTime, address, status, services, description } = req.body ?? {};
+			const { visitDate, visitTime, address, status, description } = req.body ?? {};
 
 			if (!visitDate) {
 				return res.status(400).json({ message: 'visitDate is required' });
@@ -261,13 +254,11 @@ export const VisitController = {
 				visitTime: visitTime || undefined,
 				address: address.trim(),
 				status: typeof status === 'string' ? status : 'pendiente',
-				services: Array.isArray(services) ? services.filter(Boolean) : [],
 				description: typeof description === 'string' ? description.trim() : undefined,
 			});
 
 			// Populate correctamente (sin encadenar mal)
 			await created.populate('user', 'name email');
-			await created.populate('services', 'name description');
 
 			const populated = created;
 
@@ -287,9 +278,6 @@ export const VisitController = {
 				VISIT_DATE: parsedVisitDate.toLocaleDateString(),
 				VISIT_TIME: visitTime || 'No especificada',
 				ADDRESS: address,
-				SERVICES: Array.isArray(populated.services)
-					? populated.services.map((s: any) => s.name).join(', ')
-					: '',
 				DESCRIPTION_BLOCK: description ? description : 'Sin descripción',
 				STATUS: populated.status,
 				YEAR: new Date().getFullYear(),
@@ -334,7 +322,6 @@ export const VisitController = {
 			const visits = await VisitModel.find({ user: userId })
 				.sort({ visitDate: -1 })
 				.populate('user', 'name email')
-				.populate('services', 'name description');
 			return res.json({ ok: true, visits });
 		} catch (e) {
 			return res.status(500).json({ error: 'Error fetching visits' });
