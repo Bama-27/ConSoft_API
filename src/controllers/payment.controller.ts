@@ -7,6 +7,16 @@ const base = createCrudController(OrderModel);
 
 export const PaymentController = {
 	...base,
+	calculateOrderTotals: (order: any) => {
+		const total = (order?.items ?? []).reduce((sum: number, item: any) => sum + (item?.valor || 0), 0);
+		const APPROVED = new Set(['aprobado', 'confirmado']);
+		const paid = (order?.payments ?? []).reduce((sum: number, p: any) => {
+			const status = String(p?.status || '').toLowerCase();
+			return APPROVED.has(status) ? sum + (p?.amount || 0) : sum;
+		}, 0);
+		return { total, paid, restante: total - paid };
+	},
+
 	list: async (req: Request, res: Response) => {
 		try {
 			const orders = await OrderModel.find();
@@ -105,7 +115,7 @@ export const PaymentController = {
 		}
 	},
 
-	// Crear pago a partir de imagen con OCR
+	// Preview de pago a partir de imagen con OCR (NO crea pago)
 	createFromReceiptOcr: async (req: Request, res: Response) => {
 		try {
 			const orderId = req.params.id || req.body.orderId;
@@ -117,6 +127,7 @@ export const PaymentController = {
 
 			const order = await OrderModel.findById(orderId);
 			if (!order) return res.status(404).json({ message: 'Order not found' });
+			const totals = PaymentController.calculateOrderTotals(order);
 
 			// Extraer texto y parsear monto
 			const text = await extractTextFromImage(file.path);
@@ -130,24 +141,56 @@ export const PaymentController = {
 					});
 			}
 
-			// Permitir override opcional desde el body
-			const amount = Number(req.body?.amount ?? parsedAmount);
-			const paidAt = req.body?.paidAt ? new Date(req.body.paidAt) : new Date();
-			const method = String(req.body?.method ?? 'comprobante');
-			const status = String(req.body?.status ?? 'pendiente');
+			const projectedRestante = totals.restante - parsedAmount;
+			return res.status(200).json({
+				ok: true,
+				orderId: String(order._id),
+				current: {
+					total: totals.total,
+					paid: totals.paid,
+					restante: totals.restante,
+				},
+				detectedAmount: parsedAmount,
+				projected: {
+					amountToPay: parsedAmount,
+					restanteAfter: projectedRestante,
+				},
+				receipt: {
+					receiptUrl: file.path,
+					ocrText: text,
+				},
+			});
+		} catch (error) {
+			console.error(error);
+			return res.status(500).json({ message: 'Internal server error' });
+		}
+	},
+
+	// Enviar solicitud de aprobación (crea pago en estado pendiente)
+	submitReceiptOcr: async (req: Request, res: Response) => {
+		try {
+			const orderId = req.params.id || req.body.orderId;
+			const { amount, paidAt, method, receiptUrl, ocrText } = req.body ?? {};
+			if (!orderId) return res.status(400).json({ message: 'orderId is required (path or body)' });
+			const parsedAmount = Number(amount);
+			if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+				return res.status(400).json({ message: 'amount must be a positive number' });
+			}
+			const order = await OrderModel.findById(orderId);
+			if (!order) return res.status(404).json({ message: 'Order not found' });
 
 			order.payments.push({
-				amount,
-				paidAt,
-				method,
-				status,
-				receiptUrl: file.path,
-				ocrText: text,
+				amount: parsedAmount,
+				paidAt: paidAt ? new Date(paidAt) : new Date(),
+				method: String(method ?? 'comprobante'),
+				status: 'pendiente',
+				receiptUrl: receiptUrl ? String(receiptUrl) : undefined,
+				ocrText: ocrText ? String(ocrText) : undefined,
 			} as any);
 			await order.save();
 
 			const payment = order.payments[order.payments.length - 1];
-			return res.status(201).json({ ok: true, payment, detectedAmount: parsedAmount });
+			return res.status(201).json({ ok: true, payment });
 		} catch (error) {
 			console.error(error);
 			return res.status(500).json({ message: 'Internal server error' });
