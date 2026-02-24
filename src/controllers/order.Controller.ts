@@ -73,6 +73,74 @@ export const OrderController = {
 			return res.status(500).json({ message: 'Error retrieving order' });
 		}
 	},
+
+	// Crear reseña asociada a un pedido (dueño del pedido o admin)
+	createReview: async (req: AuthRequest, res: Response) => {
+		try {
+			const userId = req.user?.id;
+			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+			const orderId = req.params.id;
+			const { rating, comment } = req.body ?? {};
+			const parsedRating = Number(rating);
+			if (!Number.isFinite(parsedRating) || parsedRating < 1 || parsedRating > 5) {
+				return res.status(400).json({ message: 'rating must be a number between 1 and 5' });
+			}
+			const order = await OrderModel.findById(orderId).populate('user', '_id');
+			if (!order) return res.status(404).json({ message: 'Order not found' });
+
+			const isOwner = String((order as any).user?._id ?? order.user) === String(userId);
+			const rolePermissions = ((req.user?.role as any)?.permissions ?? []) as any[];
+			const hasOrdersUpdatePermission =
+				Array.isArray(rolePermissions) &&
+				rolePermissions.some((p) => p?.module === 'orders' && p?.action === 'update');
+			if (!isOwner && !hasOrdersUpdatePermission) {
+				return res.status(403).json({ message: 'Forbidden' });
+			}
+
+			const existing = (order as any).reviews?.some((r: any) => String(r?.user) === String(userId));
+			if (existing) {
+				return res.status(409).json({ message: 'Review already exists for this order' });
+			}
+
+			(order as any).reviews = (order as any).reviews ?? [];
+			(order as any).reviews.push({
+				user: userId,
+				rating: parsedRating,
+				comment: comment != null ? String(comment) : undefined,
+				createdAt: new Date(),
+			});
+			await order.save();
+
+			const createdReview = (order as any).reviews[(order as any).reviews.length - 1];
+			return res.status(201).json({ ok: true, review: createdReview });
+		} catch (_e) {
+			return res.status(500).json({ message: 'Error creating review' });
+		}
+	},
+
+	// Listar reseñas de un pedido (dueño del pedido o admin)
+	listReviews: async (req: AuthRequest, res: Response) => {
+		try {
+			const userId = req.user?.id;
+			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+			const orderId = req.params.id;
+			const order = await OrderModel.findById(orderId).select('user reviews').lean();
+			if (!order) return res.status(404).json({ message: 'Order not found' });
+
+			const isOwner = String((order as any).user) === String(userId);
+			const rolePermissions = ((req.user?.role as any)?.permissions ?? []) as any[];
+			const hasOrdersViewPermission =
+				Array.isArray(rolePermissions) &&
+				rolePermissions.some((p) => p?.module === 'orders' && p?.action === 'view');
+			if (!isOwner && !hasOrdersViewPermission) {
+				return res.status(403).json({ message: 'Forbidden' });
+			}
+
+			return res.json({ ok: true, reviews: (order as any).reviews ?? [] });
+		} catch (_e) {
+			return res.status(500).json({ message: 'Error listing reviews' });
+		}
+	},
 	// Crear pedido para el usuario autenticado (móvil)
 	createForMe: async (req: AuthRequest, res: Response) => {
 		try {

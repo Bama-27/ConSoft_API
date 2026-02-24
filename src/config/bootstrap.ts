@@ -2,10 +2,7 @@ import { RoleModel } from '../models/role.model';
 import { PermissionModel } from '../models/permission.model';
 import { env } from './env';
 
-/**
- * Ensure core data exists in the database (roles, etc.) and populate
- * runtime env defaults (defaultUserRoleId/adminRoleId) if missing.
- */
+
 export async function ensureCoreData(): Promise<void> {
   const ADMIN_NAME = 'Administrador';
   const USER_NAME = 'Usuario';
@@ -30,10 +27,6 @@ export async function ensureCoreData(): Promise<void> {
     (env as any).defaultUserRoleId = String(userRole._id);
   }
 
-  // Ensure permissions by module (25 total):
-  // - Full CRUD (5 x 4 = 20): roles, users, categories, products, services
-  // - Partial: quotations (view, update) = 2
-  // - Read-only: sales.view (1), permissions.view (1), visits.view (1)
   const moduleActions: Record<string, string[]> = {
     roles: ['view', 'create', 'update', 'delete'],
     users: ['view', 'create', 'update', 'delete'],

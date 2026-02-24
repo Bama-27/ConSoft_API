@@ -74,6 +74,10 @@ if (ServiceController.create)
 	router.post('/services', upload.single('image'), ServiceController.create);
 if (UserController.update)
 	router.put('/users/:id', upload.single('profile_picture'), UserController.update);
+
+// Reseñas asociadas a pedidos
+router.get('/orders/:id/reviews', (OrderController as any).listReviews);
+router.post('/orders/:id/reviews', (OrderController as any).createReview);
 // Adjuntar imágenes a un pedido existente (propietario)
 if ((OrderController as any).addAttachments)
 	router.post(
@@ -104,12 +108,14 @@ if ((OrderController as any).listMine)
 	router.get('/orders/mine', (OrderController as any).listMine);
 mountCrud('orders', OrderController);
 mountCrud('payments', PaymentController);
-// Pago por OCR de comprobante
+// Pago por OCR de comprobante (preview)
 router.post(
 	'/orders/:id/payments/ocr',
 	upload.single('payment_image'),
 	PaymentController.createFromReceiptOcr,
 );
+// Enviar solicitud para aprobación (crea pago pendiente)
+router.post('/orders/:id/payments/ocr/submit', PaymentController.submitReceiptOcr);
 mountCrud('sales', SaleController);
 mountCrud('permissions', PermissionController);
 

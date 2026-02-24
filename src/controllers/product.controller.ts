@@ -21,7 +21,7 @@ export const ProductController = {
 	},
 	create: async (req: Request, res: Response) => {
 		try {
-			const { name, category, description, status } = req.body ?? {};
+			const { name, category, description, descriptionC, status } = req.body ?? {};
 			if (!name || typeof name !== 'string' || !name.trim()) {
 				return res.status(400).json({ message: 'name is required' });
 			}
@@ -34,6 +34,7 @@ export const ProductController = {
 			const created = await ProductModel.create({
 				name: name.trim(),
 				description,
+				descriptionC,
 				category,
 				status,
 				imageUrl,
