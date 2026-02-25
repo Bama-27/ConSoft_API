@@ -118,6 +118,7 @@ export const PaymentController = {
 	// Preview de pago a partir de imagen con OCR (NO crea pago)
 	createFromReceiptOcr: async (req: Request, res: Response) => {
 		try {
+			console.log('req.file:', (req as any).file);
 			const orderId = req.params.id || req.body.orderId;
 			const file: any = (req as any).file;
 			if (!orderId)
@@ -131,7 +132,9 @@ export const PaymentController = {
 
 			// Extraer texto y parsear monto
 			const text = await extractTextFromImage(file.path);
+			console.log('OCR text:', text); 
 			const parsedAmount = parseAmountFromText(text || '');
+			console.log('Parsed amount:', parsedAmount);
 			if (parsedAmount == null) {
 				return res
 					.status(422)
