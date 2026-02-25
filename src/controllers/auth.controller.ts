@@ -145,7 +145,7 @@ export const AuthController = {
 			res.clearCookie('token', {
 				httpOnly: true,
 				secure: env.nodeEnv === 'production',
-				sameSite: 'strict',
+				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
 			});
 			res.json({ message: 'Logout successful' });
 		} catch (err) {
