@@ -14,5 +14,6 @@ declare namespace NodeJS {
   }
 }
 
+declare module 'multer';
 
 

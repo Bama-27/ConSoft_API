@@ -13,3 +13,15 @@ export interface IUser extends Document {
 	registeredAt: Date;
 	favorites: Types.ObjectId[];
 }
+
+
+export interface ProductBase {
+	_id: string;
+	name: string;
+	description?: string;
+	category: string; // ObjectId como string
+	status?: boolean;
+	imageUrl?: string;
+}
+
+export type ProductDocument = ProductBase | Types.ObjectId;

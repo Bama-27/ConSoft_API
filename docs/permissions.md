@@ -44,6 +44,9 @@ Cada permiso se expresa como `modulo.accion` (ej.: `users.view`).
 ### sales (solo lectura)
 - sales.view
 
+### dashboard (solo lectura)
+- dashboard.view
+
 ### quotations (parcial)
 - quotations.view
 - quotations.update
@@ -51,8 +54,9 @@ Cada permiso se expresa como `modulo.accion` (ej.: `users.view`).
 ### permissions (solo lectura)
 - permissions.view
 
-Total esperado: 25 permisos
+Total esperado: 26 permisos
 
 
 
 
+r
