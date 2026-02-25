@@ -329,10 +329,7 @@ export const quotationController = {
 					const items = (quotation.items ?? []).map((item) => ({
 						detalles: item.adminNotes ?? 'Sin notas del administrador',
 						valor: (item.price ?? 0) * item.quantity,
-<<<<<<< HEAD
 						id_servicio: '6999d686f21e5a62a1823865',
-=======
->>>>>>> b6fab78969f246045960e69ea0f862a7fa4d3917
 					}));
 
 					await OrderModel.create({
