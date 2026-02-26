@@ -1,203 +1,221 @@
-## Guía de Integración para Móvil (React Native)
+## Guía de Integración Móvil (React Native)
 
-Esta guía resume cómo autenticarte, consumir endpoints y usar el chat en tiempo real desde una app móvil (React Native). Incluye ejemplos con `fetch` y `socket.io-client`.
+Esta guía explica cómo autenticar, consumir endpoints, subir imágenes, usar chat en tiempo real, manejar recuperación de contraseña y pagos con OCR. Incluye ejemplos prácticos en React Native.
 
 ### Base URL y CORS
-- Backend expone API bajo `/api`. Ejemplo: `http://<HOST>:<PORT>/api`
-- Asegúrate de agregar el origen móvil (si usas WebView) en `FRONTEND_ORIGINS`. Para apps nativas usando Bearer token no es necesario.
+- Backend sirve bajo `/api`: `http://<HOST>:<PORT>/api`
+- Configura `FRONTEND_ORIGINS` con URLs que consumirán el backend (p. ej. `http://localhost:3000,http://10.0.2.2:3000`).
+- Para apps nativas, recomendamos cookies httpOnly; usa una librería de cookies para RN.
 
-### Autenticación
-- Soportadas dos modalidades:
-  - Cookie httpOnly (web): el backend setea `token` en cookie.
- - Cookie httpOnly (móvil/web): el backend setea `token` en cookie; no retorna token en el body.
+### Autenticación (cookies httpOnly)
+- El backend NO devuelve el token en el body; lo setea en una cookie httpOnly `token`.
+- Endpoints:
+  - POST `/api/auth/login` → `{ email, password }` → Set-Cookie `token`; body: `{ message }`.
+  - POST `/api/auth/register` → `{ name, email, password }` → Set-Cookie `token`; body: `{ ok, message }`.
+  - GET `/api/auth/me` → retorna usuario autenticado.
+  - POST `/api/auth/logout` → limpia cookie.
 
-Endpoints
-- POST `/api/auth/login` → body: `{ email, password }` → response: `{ message }` y Set-Cookie `token` (httpOnly).
-- GET `/api/auth/me` → requiere autenticación (cookie o Bearer).
-- POST `/api/auth/logout` → limpia cookie (en Bearer, descarta el token del lado del cliente).
-- Registro público: POST `/api/users` → `{ name, email, password }` (asigna rol por defecto).
-  - La contraseña debe incluir al menos 1 mayúscula, 1 número y 1 caracter especial.
-
-Ejemplo React Native (login + guardar token)
+React Native (usando cookies)
 ```javascript
+import { Cookies } from '@react-native-cookies/cookies'; // o '@react-native-cookies/cookies'
 const API = 'http://<HOST>:<PORT>';
 
-async function login(email, password) {
+export async function login(email, password) {
   const res = await fetch(`${API}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
-    credentials: 'include', // para enviar/recibir cookies
+    credentials: 'include',
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || data?.message || 'Login failed');
-  return true; // cookie httpOnly queda guardada por el cliente (según plataforma)
+  // La cookie httpOnly queda almacenada por el stack nativo
+  return true;
 }
 
-async function fetchMe() {
+export async function me() {
   const res = await fetch(`${API}/api/auth/me`, { credentials: 'include' });
   return await res.json();
 }
 ```
 
-### Convenciones de petición/respuesta
-- Enviar `Content-Type: application/json` para POST/PUT con body JSON.
-- Errores: HTTP 4xx/5xx con `{ message | error }`.
-- Paginación: no aplica por defecto (endpoints devuelven colecciones completas según el recurso).
+### Gestión de contraseña
+- POST `/api/auth/forgot-password` (público): `{ email }` → siempre responde `{ ok: true }`. Envía correo si el usuario existe.
+- POST `/api/auth/reset-password` (público): `{ token, newPassword }` (token recibido por correo).
+- POST `/api/auth/change-password` (autenticado): `{ currentPassword, newPassword }`.
+- Reglas: `newPassword` debe tener 1 mayúscula, 1 número y 1 caracter especial.
 
-### Catálogo público (sin autenticación)
-- Categorías
-  - GET `/api/categories`
-  - GET `/api/categories/:id`
-- Productos
-  - GET `/api/products`
-  - GET `/api/products/:id`
-- Servicios
-  - GET `/api/services`
-  - GET `/api/services/:id`
+### Perfil del usuario
+- GET `/api/users/me` → perfil autenticado (sin datos sensibles).
+- PUT `/api/users/me` → multipart/form-data para actualizar perfil.
+  - Campos soportados: `name`, `email`, `phone`, `address`
+  - Archivo: `profile_picture` (imagen)
+  - Respuesta: `{ ok: true, user }`
 
-Ejemplos React Native (catálogo)
+Ejemplo RN (actualizar perfil con imagen)
 ```javascript
-async function listProducts() {
-  const res = await fetch(`${API}/api/products`);
-  if (!res.ok) throw new Error('Error listing products');
-  return await res.json(); // { ok: true, products }
-}
-
-async function getCategory(id) {
-  const res = await fetch(`${API}/api/categories/${id}`);
-  if (!res.ok) throw new Error('Error getting category');
-  return await res.json();
-}
-```
-
-### Productos
-- GET `/api/products` → lista de productos (con categoría).
-- GET `/api/products/:id` → detalle de producto.
-
-### Cotizaciones (dos flujos)
-
-Flujo A – Cotizar un solo producto (desde su ficha)
-- POST `/api/quotations/quick` → `{ productId, quantity?, color?, size?, notes? }`
-  - Valida que `quantity > 0` si se envía.
-  - Crea cotización con estado `solicitada`.
-- GET `/api/quotations/mine` → cotizaciones del usuario autenticado.
-- GET `/api/quotations/:id` → detalle.
-- Admin fija precio: POST `/api/quotations/:id/quote` → `{ totalEstimate, adminNotes? }` (requiere permisos admin)
-- Usuario decide: POST `/api/quotations/:id/decision` → `{ decision: 'accept' | 'reject' }`
-
-Flujo B – Carrito de cotización (varios productos)
-- POST `/api/quotations/cart` → obtiene/crea carrito (`status: 'carrito'`).
-- POST `/api/quotations/:id/items` → agrega ítem `{ productId, quantity?, color?, size?, notes? }` (valida `quantity > 0`).
-- PUT `/api/quotations/:id/items/:itemId` → edita ítem (valida `quantity > 0` si se envía).
-- DELETE `/api/quotations/:id/items/:itemId` → elimina ítem.
-- POST `/api/quotations/:id/submit` → envía cotización (`status: 'solicitada'`).
-
-Ejemplos React Native (cotizar rápido y carrito)
-```javascript
-async function quoteQuick(token, productId, options) {
-  const res = await fetch(`${API}/api/quotations/quick`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ productId, ...options }), // { quantity?, color?, size?, notes? }
-  });
-  return await res.json();
-}
-
-async function addToCart(token, quotationId, productId, options) {
-  const res = await fetch(`${API}/api/quotations/${quotationId}/items`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ productId, ...options }),
+export async function updateMyProfile({ name, email, phone, address, imageUri }) {
+  const form = new FormData();
+  if (name) form.append('name', name);
+  if (email) form.append('email', email);
+  if (phone) form.append('phone', phone);
+  if (address) form.append('address', address);
+  if (imageUri) {
+    form.append('profile_picture', {
+      uri: imageUri,
+      name: 'profile.jpg',
+      type: 'image/jpeg',
+    });
+  }
+  const res = await fetch(`${API}/api/users/me`, {
+    method: 'PUT',
+    body: form,
+    credentials: 'include',
+    headers: { 'Content-Type': 'multipart/form-data' },
   });
   return await res.json();
 }
 ```
 
-### Reglas de negocio relevantes para móvil
-- Carrito único por usuario: solo puede existir 1 carrito activo (`status: 'carrito'`) por usuario. El endpoint `/api/quotations/cart` hace creación/obtención atómica (no necesitas validar en cliente).
-- Decisión final (aceptar/rechazar):
-  - POST `/api/quotations/:id/decision` → `{ decision: 'accept' | 'reject' }`
-  - Si aceptas, se crea automáticamente un `Order` si no existe uno reciente.
-  - En ambos casos (accept/reject), se eliminan la cotización y sus mensajes de chat en la BD.
-  - Respuesta:
-    ```json
-    { "ok": true, "deleted": true, "quotationId": "<id>" }
-    ```
-  - Consideración en la app: después de decidir, no vuelvas a consultar la misma cotización; refresca la lista (`/api/quotations/mine`).
+### Catálogo público
+- Categorías: GET `/api/categories`, GET `/api/categories/:id`
+- Productos: GET `/api/products`, GET `/api/products/:id`
+- Servicios: GET `/api/services`, GET `/api/services/:id`
 
-### Chat en tiempo real (por cotización)
-- Librería cliente: `socket.io-client`
-- Seguridad: solo dueño de la cotización o admin con permisos `quotations.view|write|update` puede unirse y enviar mensajes.
+### Cotizaciones
+- Flujo rápido (1 producto):
+  - POST `/api/quotations/quick` → `{ productId, quantity?, color?, size?, notes? }` → crea con `status: 'solicitada'`.
+- Carrito (varios productos):
+  - POST `/api/quotations/cart` → crea/obtiene carrito (atómico; 1 carrito activo por usuario).
+  - POST `/api/quotations/:id/items` → `{ productId, quantity?, color?, size?, notes? }` (validación `quantity > 0`).
+  - PUT `/api/quotations/:id/items/:itemId` → actualiza (valida `quantity > 0` si se envía).
+  - DELETE `/api/quotations/:id/items/:itemId`
+  - POST `/api/quotations/:id/submit` → cambia a `solicitada`.
+- Revisión admin y decisión usuario:
+  - POST `/api/quotations/:id/quote` (admin) → `{ totalEstimate, adminNotes?, items? }`
+  - POST `/api/quotations/:id/decision` (usuario) → `{ decision: 'accept' | 'reject' }`
+    - El backend elimina la cotización y sus mensajes de chat y opcionalmente crea un Pedido si se acepta.
+    - Respuesta: `{ ok: true, deleted: true, quotationId }`
+- Listados:
+  - GET `/api/quotations/mine` (usuario)
+  - GET `/api/quotations` (admin)
+  - GET `/api/quotations/:id` (dueño o admin)
+  - GET `/api/quotations/:quotationId/messages` (historial de chat)
+
+### Chat en tiempo real
+- Cliente: `socket.io-client`
+- Acceso: dueño de la cotización o admin con permisos `quotations.view|write|update`.
 - Eventos:
   - `quotation:join` → `{ quotationId }`
-  - `chat:message` → `{ quotationId, message }` (servidor emite a la sala `q:<quotationId>`).
-- Historial REST: GET `/api/quotations/:quotationId/messages`
+  - `chat:message` → `{ quotationId, message }` (broadcast a sala `q:<quotationId>`)
+- Correo al cliente sólo si está offline: al recibir `chat:message` desde admin y el dueño no está conectado, se envía email con asunto “Tienes un nuevo mensaje”.
 
-Ejemplo React Native (Socket.IO)
+React Native (Socket.IO con cookies)
 ```javascript
 import { io } from 'socket.io-client';
+import CookieManager from '@react-native-cookies/cookies';
+const API = 'http://<HOST>:<PORT>';
 
-const socket = io(API, {
-  transports: ['websocket'],
-  auth: { token }, // Recomendado en RN (sin cookies)
-});
-
-socket.on('connect', () => {
-  socket.emit('quotation:join', { quotationId });
-});
-
-socket.on('chat:message', (msg) => {
-  // { _id, quotation, sender, message, sentAt }
-  // Actualiza UI del chat
-});
-
-function sendMessage(quotationId, message) {
-  socket.emit('chat:message', { quotationId, message });
+export async function connectSocket() {
+  // Lee cookie 'token' (si tu lib lo permite; muchas la exponen vía native)
+  const cookies = await CookieManager.get(API);
+  const tokenCookie = cookies?.token?.value; // puede estar disponible aun siendo httpOnly vía capa nativa
+  const socket = io(API, {
+    transports: ['websocket'],
+    auth: tokenCookie ? { token: tokenCookie } : undefined,
+    extraHeaders: tokenCookie ? { Cookie: `token=${encodeURIComponent(tokenCookie)}` } : undefined,
+    withCredentials: true,
+  });
+  return socket;
 }
 ```
 
-### Otros recursos (resumen)
-- Categorías:
-  - GET `/api/categories`, GET `/api/categories/:id`.
-  - POST `/api/categories` → requiere `name` (rol admin).
-- Servicios:
-  - GET `/api/services`, GET `/api/services/:id`.
-  - POST `/api/services` → requiere `name` (rol admin).
-- Roles/Permisos (admin):
-  - Roles: CRUD; `name` requerido al crear.
-  - Permisos: POST requiere `{ module, action }`.
-- Pedidos/Pagos:
-  - GET `/api/orders`, GET `/api/orders/:id` (cálculos de `total`, `paid`, `restante`).
-  - GET `/api/payments`, GET `/api/payments/:id` (con cálculo de `restante`).
+### Pedidos y Visitas para el usuario autenticado
+- Visitas:
+  - POST `/api/visits/mine` → crea visita asignada al usuario autenticado.
+  - GET `/api/visits/mine` → lista visitas del usuario.
+- Pedidos:
+  - POST `/api/orders/mine` → crea pedido para el usuario autenticado.
+    - Body JSON: `{ items: Array<item>, address? }`
+    - También acepta archivos `product_images` (hasta 10) vía multipart/form-data; se guardan en `attachments`.
+  - GET `/api/orders/mine` → lista pedidos del usuario autenticado (incluye `total`, `paid`, `restante`).
+  - POST `/api/orders/:id/attachments` → adjunta imágenes al pedido existente.
+    - Archivos: `product_images` (array, máx 10)
+    - Body opcional: `item_id` (para asociar adjunto a un ítem específico)
+    - Autorización: dueño del pedido o admin con permiso `orders.update`.
 
-### Reglas y respuestas
-- Validaciones más relevantes:
-  - Producto: `name` y `category` requeridos en POST.
-  - Categoría: `name` requerido.
-  - Servicio: `name` requerido.
-  - Cotización:
-    - `quantity > 0` en quick/add/update si se envía.
-    - `totalEstimate >= 0` en `quote` (admin).
-- Decisión:
-  - Al aceptar o rechazar una cotización, el backend elimina la cotización y sus mensajes asociados.
-- Respuestas de éxito: 200/201 con payload del recurso.
-- Errores: 400 (validación), 401 (no autenticado), 403 (sin permisos), 404 (no encontrado), 500 (servidor).
+Estructura de ítem de pedido
+```json
+{
+  "tipo": "producto | servicio",
+  "id_producto": "ObjectId (si tipo=producto)",
+  "id_servicio": "ObjectId (si tipo=servicio)",
+  "imageUrl": "string (snapshot del catálogo al crear)",
+  "detalles": "string",
+  "cantidad": 1,
+  "valor": 10000
+}
+```
 
-### Buenas prácticas en RN
-- Usa una librería de manejo de cookies (ej. `react-native-cookies`) para gestionar cookies httpOnly si tu runtime no lo hace automáticamente.
-- En caso de usar WebView, asegúrate que comparte cookies con el contexto nativo.
-- Gestiona expiración (401 → re-login).
-- Para Socket.IO en RN, sigue autenticando por `auth: { token }` si tu app obtiene el token por otros medios seguros. El backend no lo expone en el body de login.
+Ejemplo RN (crear pedido con imágenes)
+```javascript
+export async function createMyOrder({ items, address, images = [] }) {
+  const form = new FormData();
+  form.append('items', JSON.stringify(items)); // si envías JSON + files, maneja en servidor o envía todo como JSON sin archivos
+  images.slice(0, 10).forEach((uri, idx) => {
+    form.append('product_images', { uri, name: `img_${idx}.jpg`, type: 'image/jpeg' });
+  });
+  if (address) form.append('address', address);
+  const res = await fetch(`${API}/api/orders/mine`, {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return await res.json();
+}
+```
+
+### Pagos con OCR (comprobante)
+- POST `/api/orders/:id/payments/ocr`
+  - Archivo: `payment_image`
+  - El backend extrae texto con OCR y parsea un monto; registra un pago con `receiptUrl` y `ocrText`. Sólo pagos con estado aprobado/confirmado cuentan para el total.
+
+### Subida de imágenes (Cloudinary + Multer)
+- Perfil: campo `profile_picture` (PUT `/api/users/me`)
+- Pedido (nuevo): campo `product_images` (POST `/api/orders/mine`)
+- Pedido (existente): campo `product_images` + opcional `item_id` (POST `/api/orders/:id/attachments`)
+- Almacenamiento: Cloudinary, carpeta `ConSoft`
+
+### Emails (SMTP)
+- Requisitos mínimos: `MAIL_SMTP_HOST`, `MAIL_SMTP_USER`, `MAIL_SMTP_PASS`
+- Opcional: `MAIL_SMTP_PORT` (por defecto 587), `MAIL_FROM` (p. ej. `no-reply@tudominio.com`)
+- Si no hay configuración, se registra en logs: `[sendEmail noop] …` sin enviar correos.
+- Casos:
+  - Chat: se envía al dueño sólo si está offline cuando recibe mensaje.
+  - Cotización lista: se notifica al cliente.
+  - Decisión de cotización: se notifica al admin.
+
+### Variables de entorno clave
+- `PORT`, `MONGO_URI`, `JWT_SECRET`
+- `FRONTEND_ORIGINS` (lista separada por comas)
+- SMTP: `MAIL_SMTP_HOST`, `MAIL_SMTP_USER`, `MAIL_SMTP_PASS`, `MAIL_SMTP_PORT?`, `MAIL_FROM`
+- Cloudinary: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
+- Opcional: `ADMIN_NOTIFY_EMAIL`, `DEFAULT_USER_ROLE_ID`, `GOOGLE_CLIENT_ID`
+
+### Convenciones de API
+- Content-Type:
+  - JSON: `application/json`
+  - Subida de archivos: `multipart/form-data`
+- Errores: 400 validación, 401 no autenticado, 403 sin permisos, 404 no encontrado, 500 servidor.
+- Seguridad: no se envían tokens en respuestas; se usa cookie httpOnly.
+
+### Sugerencias para RN
+- Usa `@react-native-cookies/cookies` para manejar cookies httpOnly.
+- En WebView, comparte cookies con el contexto nativo si consumes API dentro del WebView.
+- Para Socket.IO, intenta leer la cookie `token` desde la librería de cookies y pásala en `auth` o `extraHeaders`.
 
 ### Referencias
 - Endpoints detallados: `docs/api-endpoints.md`
-- Flujo de Cotizaciones: `docs/quotations.md`
-
-
+- OpenAPI: `docs/openapi.yaml`
+- Flujo de cotizaciones: `docs/quotations.md`

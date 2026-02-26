@@ -6,6 +6,7 @@ import { ChatMessageModel } from '../models/chatMessage.model';
 import { QuotationModel } from '../models/quotation.model';
 import { UserModel } from '../models/user.model';
 import { sendEmail } from '../utils/mailer';
+import { DmMessageModel, buildParticipantsPair } from '../models/dmMessage.model';
 
 interface JwtPayload {
 	id: string;
@@ -104,6 +105,50 @@ export function initSocket(server: HttpServer) {
 			})().catch(() => {});
 		});
 
+		// Direct messages (user to user)
+		socket.on('dm:join', ({ userId: otherUserId }: { userId: string }) => {
+			try {
+				if (!otherUserId) return;
+				const [a, b] = buildParticipantsPair(user.id, otherUserId);
+				const room = `dm:${String(a)}:${String(b)}`;
+				socket.join(room);
+				joinedRooms.add(room);
+			} catch {
+				// ignore
+			}
+		});
+
+		socket.on('dm:message', async (payload: { toUserId: string; message: string }) => {
+			try {
+				if (!payload?.toUserId || !payload?.message) return;
+				const [a, b] = buildParticipantsPair(user.id, payload.toUserId);
+				const room = `dm:${String(a)}:${String(b)}`;
+				const msg = await DmMessageModel.create({
+					participants: [a, b],
+					sender: user.id,
+					message: payload.message,
+				});
+				// Emit to both participants' room
+				socket.to(room).emit('dm:message', {
+					_id: String(msg._id),
+					from: user.id,
+					to: payload.toUserId,
+					message: payload.message,
+					sentAt: msg.sentAt,
+				});
+				// Also emit back to sender for confirmation (if needed on client)
+				socket.emit('dm:message', {
+					_id: String(msg._id),
+					from: user.id,
+					to: payload.toUserId,
+					message: payload.message,
+					sentAt: msg.sentAt,
+				});
+			} catch (_e) {
+				// ignore
+			}
+		});
+
 		socket.on('chat:message', async (payload: { quotationId: string; message: string }) => {
 			try {
 				if (!payload?.quotationId || !payload?.message) return;
@@ -122,8 +167,8 @@ export function initSocket(server: HttpServer) {
 					sentAt: msg.sentAt,
 				});
 				// Notificación por correo al cliente (dueño) solo si NO tiene sesión iniciada (no está online en socket)
-				const linkBase = env.frontendOrigins[0] || 'http://localhost:3000';
-				const link = `${linkBase}/cotizaciones/${payload.quotationId}`;
+				const linkBase = env.frontendOrigins[0] || 'http://localhost:3000/client';
+				const link = `${linkBase}/notificaciones/${payload.quotationId}`;
 				const isOwnerSender = access.ownerId && String(access.ownerId) === String(user.id);
 				const ownerOnline = access.ownerId ? isUserOnline(access.ownerId) : false;
 				if (!isOwnerSender && access.ownerEmail && !ownerOnline) {

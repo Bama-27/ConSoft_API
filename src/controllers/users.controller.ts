@@ -6,11 +6,56 @@ import { hash } from 'bcrypt';
 import { env } from '../config/env';
 import { RoleModel } from '../models/role.model';
 import { generateToken } from '../utils/jwt';
+import { AuthRequest } from '../middlewares/auth.middleware';
 
 const base = createCrudController(UserModel);
 
 export const UserController = {
 	...base,
+	// Perfil del usuario autenticado (datos completos, sin password)
+	me: async (req: AuthRequest, res: Response) => {
+		try {
+			const userId = req.user?.distinctId || req.user?.id;
+			if (!userId) return returnError(res, 401, 'Unauthorized');
+			const u = await UserModel.findById(userId)
+				.select('-password -__v')
+				.populate({ path: 'role', select: 'name description permissions' });
+			if (!u) return returnError(res, 404, 'User not found');
+			return res.json({ ok: true, user: u });
+		} catch (e) {
+			return returnError(res, 500, 'Error fetching profile');
+		}
+	},
+	// Actualizar perfil propio (sin cambiar password/role)
+	updateMe: async (req: AuthRequest, res: Response) => {
+		try {
+			const userId = req.user?.id;
+			if (!userId) return returnError(res, 401, 'Unauthorized');
+			const { password, role, email, name, phone, address, ...rest } = req.body ?? {};
+			if (password != null) return returnError(res, 400, 'Password cannot be changed via this endpoint');
+			if (role != null) return returnError(res, 400, 'Role cannot be changed via this endpoint');
+			const updateDoc: any = {};
+			if (name != null) updateDoc.name = String(name);
+			if (phone != null) updateDoc.phone = String(phone);
+			if (address != null) updateDoc.address = String(address);
+			if (email != null) {
+				const exists = await UserModel.findOne({ email, _id: { $ne: userId } }).select('_id');
+				if (exists) return returnError(res, 400, 'This email is already in use');
+				updateDoc.email = String(email);
+			}
+			// permitimos campos extra no sensibles si existieran (ej. metadata)
+			Object.assign(updateDoc, rest);
+			const imageUrl = (req as any).file?.path || null;
+			if (imageUrl) updateDoc.profile_picture = imageUrl;
+			const updated = await UserModel.findByIdAndUpdate(userId, updateDoc, { new: true })
+				.select('-password -__v')
+				.populate({ path: 'role', select: 'name description' });
+			if (!updated) return returnError(res, 404, 'Not found');
+			return res.json({ ok: true, user: updated });
+		} catch (e) {
+			return returnError(res, 500, 'Error updating profile');
+		}
+	},
 	list: async (req: Request, res: Response) => {
 		try {
 			const users = await UserModel.find().select('-password -__v').populate({
@@ -114,7 +159,7 @@ export const UserController = {
 				updateDoc.role = role;
 			}
 
-			const imageUrl = req.file?.path || null;
+			const imageUrl = (req as any).file?.path || null;
 			if (imageUrl) updateDoc.profile_picture = imageUrl;
 
 			const updated = await UserModel.findByIdAndUpdate(userId, updateDoc, { new: true })
@@ -126,4 +171,30 @@ export const UserController = {
 			return res.status(500).json({ error: 'Error updating user' });
 		}
 	},
+
+	get: async (req: Request, res: Response) => {
+		try {
+			const { id } = req.params; // ID del usuario desde la URL
+
+			if (!id) {
+				return res.status(400).json({ message: 'El ID del usuario es obligatorio' });
+			}
+
+			// Buscar usuario por id y popular favorites
+			const user = await UserModel.findById(id).populate('favorites');
+
+			if (!user) {
+				return res.status(404).json({ message: 'Usuario no encontrado' });
+			}
+
+			return res.status(200).json({ data: user });
+		} catch (error) {
+			console.error('Error en getUserById:', error);
+			return res.status(500).json({ message: 'Error interno del servidor' });
+		}
+	},
 };
+
+function returnError(res: Response, code: number, message: string) {
+	return res.status(code).json({ message });
+}

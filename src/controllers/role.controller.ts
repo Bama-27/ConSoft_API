@@ -25,7 +25,7 @@ export const RoleController = {
 				return res.status(400).json({ message: 'name is required' });
 			}
 			if (permissions != null && !Array.isArray(permissions)) {
-				return res.status(400).json({ message: 'permissions must be an array of ids' });
+				return res.status(400).json({ message: 'must permissions be an array of ids' });
 			}
 			const cleaned = Array.isArray(permissions)
 				? Array.from(
@@ -33,11 +33,15 @@ export const RoleController = {
 							permissions
 								.filter(Boolean)
 								.map((p: any) => String(p))
-								.filter((p: string) => mongoose.isValidObjectId(p)),
-						),
+								.filter((p: string) => mongoose.isValidObjectId(p))
+						)
 				  )
 				: undefined;
-			const newRole = await RoleModel.create({ name: name.trim(), description, permissions: cleaned });
+			const newRole = await RoleModel.create({
+				name: name.trim(),
+				description,
+				permissions: cleaned,
+			});
 			return res.status(201).json(newRole);
 		} catch (error) {
 			console.error(error);
@@ -66,7 +70,9 @@ export const RoleController = {
 				updateDoc.permissions = unique;
 			}
 
-			const updated = await RoleModel.findByIdAndUpdate(roleId, updateDoc, { new: true }).populate('permissions');
+			const updated = await RoleModel.findByIdAndUpdate(roleId, updateDoc, {
+				new: true,
+			}).populate('permissions');
 			if (!updated) return res.status(404).json({ message: 'Not found' });
 			return res.json({ ok: true, data: updated });
 		} catch (error) {

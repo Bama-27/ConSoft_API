@@ -1,53 +1,103 @@
-import { Request, Response } from 'express';
+// controllers/quotation.controller.ts
+import { Response } from 'express';
+import { Types } from 'mongoose';
 import { QuotationModel } from '../models/quotation.model';
-import { ProductModel } from '../models/product.model';
 import { AuthRequest } from '../middlewares/auth.middleware';
-import { sendEmail } from '../utils/mailer';
-import { env } from '../config/env';
 import { OrderModel } from '../models/order.model';
+import { env } from '../config/env';
+import { sendEmail } from '../utils/mailer';
+import { templateService } from '../services/template.service';
 
-export const QuotationController = {
-	// Flujo "cotizar" directo desde un producto (una sola llamada)
-	quickCreate: async (req: AuthRequest, res: Response) => {
+export const quotationController = {
+	listMine: async (req: AuthRequest, res: Response) => {
 		try {
 			const userId = req.user?.id;
 			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-			const { productId, quantity, color, size} = req.body ?? {};
-			if (!productId) return res.status(400).json({ message: 'productId is required' });
-			if (quantity != null && (!Number.isFinite(Number(quantity)) || Number(quantity) < 1)) {
-				return res.status(400).json({ message: 'quantity must be a positive number' });
-			}
-			const prod = await ProductModel.findById(productId).select('_id');
-			if (!prod) return res.status(404).json({ message: 'Product not found' });
 
-			const quotation = await QuotationModel.create({
-				user: userId,
-				status: 'solicitada',
-				items: [{ product: prod._id, quantity: quantity ?? 1, color, size}],
-			});
-			const populated = await quotation.populate('items.product').then((doc) => doc.populate('user', 'name email'));
-			return res.status(201).json({ ok: true, quotation: populated });
-		} catch (err) {
-			console.log(err)
-			return res.status(500).json({ error: 'Error creating quick quotation' });
+			const quotations = await QuotationModel.find({ user: userId })
+				.sort({ createdAt: -1 })
+				.populate('user', 'name email')
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
+
+			return res.status(200).json({ ok: true, quotations });
+		} catch (error) {
+			console.error('Error listing my quotations:', error);
+			return res.status(500).json({ error: 'Error fetching quotations' });
 		}
 	},
 
-	// Crea o retorna un carrito activo para el usuario
 	createOrGetCart: async (req: AuthRequest, res: Response) => {
 		try {
 			const userId = req.user?.id;
 			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
-			// Operación atómica: crea si no existe, o devuelve el existente
-			const cart = await QuotationModel.findOneAndUpdate(
-				{ user: userId, status: 'carrito' },
-				{ $setOnInsert: { user: userId, status: 'carrito', items: [] } },
-				{ new: true, upsert: true }
-			).populate('items.product').populate('user', 'name email');
-			return res.json({ ok: true, cart });
-		} catch (err) {
-			return res.status(500).json({ error: 'Error creating/getting cart' });
+			let cart = await QuotationModel.findOne({ user: userId, status: 'Carrito' })
+				.populate('user', 'name email')
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
+
+			if (!cart) {
+				cart = await QuotationModel.create({ user: userId, status: 'Carrito', items: [] });
+				cart = await QuotationModel.findById(cart._id).populate('user', 'name email');
+			}
+
+			return res.status(200).json({ ok: true, cart });
+		} catch (error) {
+			console.error('Error creating/getting cart:', error);
+			return res.status(500).json({ error: 'Error with cart' });
+		}
+	},
+
+	quickCreate: async (req: AuthRequest, res: Response) => {
+		try {
+			const userId = req.user?.id;
+			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+			const { items, adminNotes } = req.body;
+
+			if (!items || !Array.isArray(items) || items.length === 0)
+				return res.status(400).json({ message: 'Items array is required' });
+
+			const quotation = await QuotationModel.create({
+				user: userId,
+				status: 'Solicitada',
+				items,
+				adminNotes: adminNotes || '',
+			});
+
+			const populated = await QuotationModel.findById(quotation._id)
+				.populate('user', 'name email')
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
+
+			return res.status(201).json({ ok: true, quotation: populated });
+		} catch (error) {
+			console.error('Error quick creating quotation:', error);
+			return res.status(500).json({ error: 'Error creating quotation' });
+		}
+	},
+
+	adminCreate: async (req: AuthRequest, res: Response) => {
+		try {
+			const { userId, adminNotes } = req.body ?? {};
+
+			if (!userId || !Types.ObjectId.isValid(userId))
+				return res.status(400).json({ message: 'Valid userId is required' });
+
+			const quotation = await QuotationModel.create({
+				user: new Types.ObjectId(userId),
+				status: 'Solicitada',
+				items: [],
+				adminNotes: adminNotes || '',
+			});
+
+			const populated = await QuotationModel.findById(quotation._id).populate(
+				'user',
+				'name email',
+			);
+
+			return res.status(201).json({ ok: true, quotation: populated });
+		} catch (error: any) {
+			console.error('Error creating quotation as admin:', error);
+			return res.status(500).json({ error: 'Error creating quotation' });
 		}
 	},
 
@@ -55,39 +105,59 @@ export const QuotationController = {
 		try {
 			const userId = req.user?.id;
 			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-			const quotationId = req.params.id;
-			const { productId, quantity, color, size, notes } = req.body;
 
-			if (!productId) return res.status(400).json({ message: 'productId is required' });
-			if (quantity != null && (!Number.isFinite(Number(quantity)) || Number(quantity) < 1)) {
-				return res.status(400).json({ message: 'quantity must be a positive number' });
-			}
-			const prod = await ProductModel.findById(productId).select('_id');
-			if (!prod) return res.status(404).json({ message: 'Product not found' });
+			const { id } = req.params;
+			const { productId, quantity, color, size, customDetails, isCustom } = req.body;
 
-			// Operación atómica: push al array si es del usuario y está en 'carrito'
-			const updated = await QuotationModel.findOneAndUpdate(
-				{ _id: quotationId, user: userId, status: 'carrito' },
-				{
-					$push: {
-						items: {
-							product: prod._id,
-							quantity: quantity ?? 1,
-							color,
-							size,
-							notes,
-						},
+			const quotation = await QuotationModel.findById(id);
+			if (!quotation) return res.status(404).json({ message: 'Quotation not found' });
+
+			if (isCustom) {
+				if (!customDetails?.name || !customDetails?.description)
+					return res.status(400).json({
+						message:
+							'customDetails.name and description are required for custom products',
+					});
+
+				quotation.items.push({
+					product: null,
+					isCustom: true,
+					customDetails: {
+						name: customDetails.name,
+						description: customDetails.description,
+						woodType: customDetails.woodType || 'Por definir',
+						referenceImage: customDetails.referenceImage || null,
 					},
-				},
-				{ new: true }
-			).populate('items.product').populate('user', 'name email');
-			if (!updated) {
-				return res.status(400).json({
-					message: 'Cannot modify quotation (not found or not a cart owned by user)',
+					quantity: quantity || 1,
+					color: color || '',
+					size: size || '',
+					price: 0,
+					itemStatus: 'pending_quote',
+				});
+			} else {
+				if (!productId || !Types.ObjectId.isValid(productId))
+					return res.status(400).json({ message: 'Valid productId is required' });
+
+				quotation.items.push({
+					product: new Types.ObjectId(productId),
+					isCustom: false,
+					quantity: quantity || 1,
+					color: color || '',
+					size: size || '',
+					price: 0,
+					itemStatus: 'normal',
 				});
 			}
-			return res.status(201).json({ ok: true, quotation: updated });
-		} catch (err) {
+
+			await quotation.save();
+
+			const populated = await QuotationModel.findById(quotation._id)
+				.populate('user', 'name email')
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
+
+			return res.status(200).json({ ok: true, quotation: populated });
+		} catch (error) {
+			console.error('Error adding item:', error);
 			return res.status(500).json({ error: 'Error adding item' });
 		}
 	},
@@ -96,31 +166,31 @@ export const QuotationController = {
 		try {
 			const userId = req.user?.id;
 			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-			const quotationId = req.params.id;
-			const itemId = req.params.itemId;
-			const { quantity, color, size, notes } = req.body ?? {};
 
-			if (quantity != null && (!Number.isFinite(Number(quantity)) || Number(quantity) < 1)) {
-				return res.status(400).json({ message: 'quantity must be a positive number' });
-			}
-			const setOps: any = {};
-			if (quantity != null) setOps['items.$.quantity'] = quantity;
-			if (color != null) setOps['items.$.color'] = color;
-			if (size != null) setOps['items.$.size'] = size;
-			if (notes != null) setOps['items.$.notes'] = notes;
+			const { id, itemId } = req.params;
+			const { quantity, color, size, price, adminNotes } = req.body;
 
-			const updated = await QuotationModel.findOneAndUpdate(
-				{ _id: quotationId, user: userId, status: 'carrito', 'items._id': itemId },
-				{ $set: setOps },
-				{ new: true }
-			).populate('items.product').populate('user', 'name email');
-			if (!updated) {
-				return res
-					.status(404)
-					.json({ message: 'Quotation or item not found, or not a cart' });
-			}
-			return res.json({ ok: true, quotation: updated });
-		} catch (err) {
+			const quotation = await QuotationModel.findOne({ _id: id, user: userId });
+			if (!quotation) return res.status(404).json({ message: 'Quotation not found' });
+
+			const item = quotation.items.id(itemId);
+			if (!item) return res.status(404).json({ message: 'Item not found' });
+
+			if (quantity !== undefined) item.quantity = quantity;
+			if (color !== undefined) item.color = color;
+			if (size !== undefined) item.size = size;
+			if (price !== undefined) item.price = price;
+			if (adminNotes !== undefined) item.adminNotes = adminNotes;
+
+			await quotation.save();
+
+			const populated = await QuotationModel.findById(quotation._id)
+				.populate('user', 'name email')
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
+
+			return res.status(200).json({ ok: true, quotation: populated });
+		} catch (error) {
+			console.error('Error updating item:', error);
 			return res.status(500).json({ error: 'Error updating item' });
 		}
 	},
@@ -129,19 +199,27 @@ export const QuotationController = {
 		try {
 			const userId = req.user?.id;
 			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-			const quotationId = req.params.id;
-			const itemId = req.params.itemId;
 
-			const updated = await QuotationModel.findOneAndUpdate(
-				{ _id: quotationId, user: userId, status: 'carrito' },
-				{ $pull: { items: { _id: itemId } } },
-				{ new: true }
-			).populate('items.product').populate('user', 'name email');
-			if (!updated) {
-				return res.status(404).json({ message: 'Quotation not found or not a cart' });
-			}
-			return res.status(200).json({ ok: true, quotation: updated });
-		} catch (err) {
+			const { id, itemId } = req.params;
+
+			const quotation = await QuotationModel.findOne({ _id: id, user: userId });
+			if (!quotation) return res.status(404).json({ message: 'Quotation not found' });
+
+			const itemToRemove = quotation.items.id(itemId);
+			if (!itemToRemove) return res.status(404).json({ message: 'Item not found' });
+
+			itemToRemove.deleteOne();
+			await quotation.save();
+
+			const populated = await QuotationModel.findById(quotation._id)
+				.populate('user', 'name email')
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
+
+			return res
+				.status(200)
+				.json({ ok: true, quotation: populated, message: 'Item removed successfully' });
+		} catch (error) {
+			console.error('Error removing item:', error);
 			return res.status(500).json({ error: 'Error removing item' });
 		}
 	},
@@ -150,204 +228,438 @@ export const QuotationController = {
 		try {
 			const userId = req.user?.id;
 			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-			const quotationId = req.params.id;
 
-			const quotation = await QuotationModel.findById(quotationId);
+			const { id } = req.params;
+
+			const quotation = await QuotationModel.findOne({ _id: id, user: userId });
 			if (!quotation) return res.status(404).json({ message: 'Quotation not found' });
-			if (String(quotation.user) !== String(userId)) {
-				return res.status(403).json({ message: 'Forbidden' });
-			}
-			if (quotation.items.length === 0) {
-				return res.status(400).json({ message: 'Cart is empty' });
-			}
-			quotation.status = 'solicitada';
+
+			if (quotation.items.length === 0)
+				return res.status(400).json({ message: 'Cannot submit empty quotation' });
+
+			quotation.status = 'Solicitada';
 			await quotation.save();
-			const populated = await quotation.populate('items.product').then((doc) => doc.populate('user', 'name email'));
-			return res.json({ ok: true, quotation: populated });
-		} catch (err) {
+
+			const populated = await QuotationModel.findById(quotation._id)
+				.populate('user', 'name email')
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
+
+			return res.status(200).json({
+				ok: true,
+				quotation: populated,
+				message: 'Quotation submitted successfully',
+			});
+		} catch (error) {
+			console.error('Error submitting quotation:', error);
 			return res.status(500).json({ error: 'Error submitting quotation' });
 		}
 	},
 
-	// Admin fija precio/respuesta de cotización
 	adminSetQuote: async (req: AuthRequest, res: Response) => {
 		try {
 			const { id } = req.params;
-			const { totalEstimate, adminNotes, items } = req.body ?? {};
+			const { items, totalEstimate, adminNotes } = req.body;
 
-			const quotation = await QuotationModel.findById(id).populate('user', 'email');
+			const quotation = await QuotationModel.findById(id);
 			if (!quotation) return res.status(404).json({ message: 'Quotation not found' });
 
-			if (
-				totalEstimate == null ||
-				!Number.isFinite(Number(totalEstimate)) ||
-				Number(totalEstimate) < 0
-			) {
-				return res
-					.status(400)
-					.json({ message: 'totalEstimate must be a non-negative number' });
-			}
-
-			quotation.totalEstimate = totalEstimate;
-			if (adminNotes != null) quotation.adminNotes = adminNotes;
-
-			// Actualizar cada item con price y adminNotes
-			if (Array.isArray(items)) {
-				quotation.items.forEach((itemDoc) => {
-					const updatedItem = items.find((i: any) => i._id === itemDoc._id.toString());
-					if (updatedItem) {
-						itemDoc.price = Number(updatedItem.price ?? itemDoc.price ?? 0);
-						itemDoc.adminNotes = updatedItem.adminNotes ?? itemDoc.adminNotes ?? '';
+			if (items && Array.isArray(items)) {
+				items.forEach((updateItem: any) => {
+					const item = quotation.items.id(updateItem._id || updateItem.itemId);
+					if (item) {
+						if (updateItem.price !== undefined) item.price = updateItem.price;
+						if (updateItem.adminNotes !== undefined)
+							item.adminNotes = updateItem.adminNotes;
+						if (item.isCustom && item.itemStatus === 'pending_quote')
+							item.itemStatus = 'quoted';
 					}
 				});
 			}
 
-			quotation.status = 'cotizada';
+			quotation.totalEstimate =
+				totalEstimate !== undefined
+					? totalEstimate
+					: quotation.items.reduce((sum, i) => sum + (i.price || 0) * i.quantity, 0);
+
+			if (adminNotes !== undefined) quotation.adminNotes = adminNotes;
+
+			quotation.status = 'Cotizada';
 			await quotation.save();
 
-			// Notificar al usuario por correo
-			const ownerEmail = (quotation.user as any)?.email;
-			if (ownerEmail) {
-				const linkBase = env.frontendOrigins[0] || 'http://localhost:3000';
-				const link = `${linkBase}/cotizaciones/${quotation._id}`;
-				await sendEmail({
-					to: ownerEmail,
-					subject: 'Tienes una cotización lista para revisar',
-					text: `Tu cotización está lista. Revísala aquí: ${link}`,
-					html: `<p>Tu cotización está lista.</p><p><a href="${link}">Ver cotización</a></p>`,
-				});
-			}
+			const populated = await QuotationModel.findById(quotation._id)
+				.populate('user', 'name email')
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
 
-			return res.json({ ok: true, quotation });
-		} catch (err) {
-			console.log(err);
+			return res.status(200).json({ ok: true, quotation: populated });
+		} catch (error) {
+			console.error('Error setting quote:', error);
 			return res.status(500).json({ error: 'Error setting quote' });
 		}
 	},
 
-	// Usuario decide aceptar o rechazar
 	userDecision: async (req: AuthRequest, res: Response) => {
 		try {
 			const userId = req.user?.id;
 			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
 			const { id } = req.params;
-			const { decision } = req.body ?? {}; // 'accept' | 'reject'
-			if (!decision || !['accept', 'reject'].includes(decision)) {
-				return res.status(400).json({ message: 'decision must be accept|reject' });
-			}
-			const quotation = await QuotationModel.findById(id).populate('user', 'email');
+			const { decision } = req.body ?? {};
+
+			if (!decision || !['accepted', 'rejected'].includes(decision))
+				return res.status(400).json({ message: 'decision must be accepted|rejected' });
+
+			const quotation = await QuotationModel.findById(id).populate('user', 'email name');
 			if (!quotation) return res.status(404).json({ message: 'Quotation not found' });
+
 			const ownerId = String((quotation.user as any)?._id ?? quotation.user);
-			if (ownerId !== String(userId)) {
-				return res.status(403).json({ message: 'Forbidden' });
-			}
-			if (decision === 'accept') {
-				quotation.status = 'en_proceso';
-				// Crear pedido si no existe uno derivado de esta cotización (heurística simple)
+			if (ownerId !== String(userId)) return res.status(403).json({ message: 'Forbidden' });
+
+			const isAccepted = decision === 'accepted';
+
+			if (isAccepted) {
+				quotation.status = 'En proceso';
+
 				const existingOrder = await OrderModel.findOne({
 					user: quotation.user as any,
-					status: 'en_proceso',
-					startedAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) }, // últimos 5 minutos
+					status: 'En Proceso',
+					startedAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) },
 				});
-				if (!existingOrder) {
-					const items = (quotation.items ?? []).map((item) => {
-						const price = item.price ?? 0; // precio unitario guardado en la cotización
-						const subtotal = price * item.quantity; // subtotal calculado dinámicamente
 
-						return {
-							detalles: item.adminNotes ?? 'Sin notas del administrador',
-							valor: subtotal, // aquí guardamos subtotal dinámico
-							id_servicio: '68d47cf4da9d98534c933ff9', // o el id que corresponda
-						};
-					});
+				if (!existingOrder) {
+					const items = (quotation.items ?? []).map((item) => ({
+						detalles: item.adminNotes ?? 'Sin notas del administrador',
+						valor: (item.price ?? 0) * item.quantity,
+						id_servicio: '6999d686f21e5a62a1823865',
+					}));
 
 					await OrderModel.create({
 						user: quotation.user as any,
-						status: 'en_proceso',
+						status: 'En Proceso',
 						startedAt: new Date(),
 						items,
 					} as any);
 				}
 			} else {
-				quotation.status = 'cerrada';
+				quotation.status = 'Cerrada';
 			}
+
 			await quotation.save();
 
-			// Notificar al admin
 			const to = env.adminNotifyEmail || env.mailFrom;
 			if (to) {
 				const linkBase = env.frontendOrigins[0] || 'http://localhost:3000';
-				const link = `${linkBase}/cotizaciones/${quotation._id}`;
+				const userName = (quotation.user as any)?.name || 'Cliente';
+				const userEmail = (quotation.user as any)?.email || '';
+
+				const html = await templateService.render('user-decision', {
+					HEADER_COLOR: isAccepted ? '#16a34a' : '#dc2626',
+					DECISION_ICON: isAccepted ? '✅' : '❌',
+					DECISION_TITLE: isAccepted ? 'Cotización Aceptada' : 'Cotización Rechazada',
+					DECISION_COLOR: isAccepted ? '#16a34a' : '#dc2626',
+					DECISION_TEXT: isAccepted ? 'aceptado' : 'rechazado',
+					DECISION_LABEL: isAccepted ? 'Aceptada' : 'Rechazada',
+					BADGE_BG: isAccepted ? '#dcfce7' : '#fee2e2',
+					BADGE_COLOR: isAccepted ? '#15803d' : '#b91c1c',
+					NEW_STATUS: isAccepted ? 'En proceso' : 'Cerrada',
+					CONDITIONAL_MESSAGE: isAccepted
+						? 'Se ha creado un pedido a partir de esta cotización. El equipo se pondrá en contacto próximamente para coordinar los detalles.'
+						: 'El cliente ha decidido no proceder con esta cotización. Puedes contactarlo si deseas conocer el motivo.',
+					USER_NAME: userName,
+					USER_EMAIL: userEmail,
+					QUOTATION_ID: String(quotation._id).slice(-8).toUpperCase(),
+					DECISION_DATE: new Date().toLocaleDateString('es-ES', {
+						day: 'numeric',
+						month: 'long',
+						year: 'numeric',
+					}),
+					YEAR: new Date().getFullYear(),
+				});
+
 				await sendEmail({
 					to,
-					subject: `Decisión del cliente: ${
-						decision === 'accept' ? 'ACEPTÓ' : 'RECHAZÓ'
-					} la cotización`,
-					text: `El cliente ha ${
-						decision === 'accept' ? 'aceptado' : 'rechazado'
-					} la cotización. ${link}`,
-					html: `<p>El cliente ha <strong>${
-						decision === 'accept' ? 'aceptado' : 'rechazado'
-					}</strong> la cotización.</p><p><a href="${link}">Ver cotización</a></p>`,
+					subject: `Decisión del cliente: ${isAccepted ? 'ACEPTÓ' : 'RECHAZÓ'} la cotización`,
+					html,
 				});
 			}
-			// Eliminar mensajes de chat y la cotización para permitir nuevas solicitudes
+
 			try {
 				const { ChatMessageModel } = await import('../models/chatMessage.model');
 				await ChatMessageModel.deleteMany({ quotation: quotation._id });
 			} catch (_e) {
-				// no-op si el modelo no está disponible por alguna razón
+				// no-op
 			}
+
 			await QuotationModel.deleteOne({ _id: quotation._id });
+
 			return res.json({ ok: true, deleted: true, quotationId: String(quotation._id) });
 		} catch (err) {
+			console.error('USER DECISION ERROR 👉', err);
 			return res.status(500).json({ error: 'Error applying decision' });
 		}
 	},
 
-	listMine: async (req: AuthRequest, res: Response) => {
+	listAll: async (req: AuthRequest, res: Response) => {
 		try {
-			const userId = req.user?.id;
-			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-			const quotations = await QuotationModel.find({ user: userId })
-				.sort({ createdAt: -1 })
-				.populate('items.product')
-				.populate('user', 'name email');
-			return res.json({ ok: true, quotations });
-		} catch (err) {
-			return res.status(500).json({ error: 'Error getting quotations' });
-		}
-	},
+			const { status, page = 1, limit = 20 } = req.query;
 
-	listAll: async (_req: Request, res: Response) => {
-		try {
-			const quotations = await QuotationModel.find()
+			const filter: any = {};
+			if (status) filter.status = status;
+
+			const quotations = await QuotationModel.find(filter)
 				.sort({ createdAt: -1 })
+				.limit(Number(limit))
+				.skip((Number(page) - 1) * Number(limit))
 				.populate('user', 'name email')
-				.populate('items.product');
-			return res.json({ ok: true, quotations });
-		} catch (err) {
-			return res.status(500).json({ error: 'Error getting quotations' });
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
+
+			const total = await QuotationModel.countDocuments(filter);
+
+			return res.status(200).json({
+				ok: true,
+				quotations,
+				pagination: {
+					total,
+					page: Number(page),
+					limit: Number(limit),
+					pages: Math.ceil(total / Number(limit)),
+				},
+			});
+		} catch (error) {
+			console.error('Error listing all quotations:', error);
+			return res.status(500).json({ error: 'Error fetching quotations' });
 		}
 	},
 
 	get: async (req: AuthRequest, res: Response) => {
 		try {
-			const id = req.params.id;
-			const userId = req.user?.id;
+			const { id } = req.params;
+
 			const quotation = await QuotationModel.findById(id)
 				.populate('user', 'name email')
-				.populate('items.product');
-			if (!quotation) return res.status(404).json({ message: 'Not found' });
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
 
-			// Permitir al dueño o a quien tenga permisos (validación adicional se puede hacer en ruta con verifyRole)
-			const ownerIdForGet = String((quotation.user as any)?._id ?? quotation.user);
-			if (ownerIdForGet !== String(userId)) {
-				// No es dueño; se asume validación de permisos en rutas para admin
+			if (!quotation) return res.status(404).json({ message: 'Quotation not found' });
+
+			return res.status(200).json({ ok: true, quotation });
+		} catch (error) {
+			console.error('Error getting quotation:', error);
+			return res.status(500).json({ error: 'Error fetching quotation' });
+		}
+	},
+
+	getMyCart: async (req: AuthRequest, res: Response) => {
+		try {
+			const userId = req.user?.id;
+			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+			let cart = await QuotationModel.findOne({ user: userId, status: 'Carrito' })
+				.populate('user', 'name email')
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
+
+			if (!cart) {
+				cart = await QuotationModel.create({ user: userId, status: 'Carrito', items: [] });
+				cart = await QuotationModel.findById(cart._id).populate('user', 'name email');
 			}
-			return res.json(quotation);
-		} catch (err) {
-			return res.status(500).json({ error: 'Error getting quotation' });
+
+			return res.status(200).json({ ok: true, cart });
+		} catch (error) {
+			console.error('Error getting cart:', error);
+			return res.status(500).json({ error: 'Error fetching cart' });
+		}
+	},
+
+	addItemToCart: async (req: AuthRequest, res: Response) => {
+		try {
+			const userId = req.user?.id;
+			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+			const { productId, quantity, color, size } = req.body;
+
+			if (!productId || !Types.ObjectId.isValid(productId))
+				return res.status(400).json({ message: 'Valid productId is required' });
+			if (!color) return res.status(400).json({ message: 'color is required' });
+
+			let cart = await QuotationModel.findOne({ user: userId, status: 'Carrito' });
+			if (!cart)
+				cart = await QuotationModel.create({ user: userId, status: 'Carrito', items: [] });
+
+			const existingItem = cart.items.find(
+				(item: any) =>
+					item.product?.toString() === productId &&
+					item.color === color &&
+					item.size === size &&
+					!item.isCustom,
+			);
+
+			if (existingItem) {
+				existingItem.quantity += quantity || 1;
+			} else {
+				cart.items.push({
+					product: new Types.ObjectId(productId),
+					isCustom: false,
+					quantity: quantity || 1,
+					color,
+					size: size || '',
+					price: 0,
+					itemStatus: 'normal',
+				});
+			}
+
+			await cart.save();
+
+			const populated = await QuotationModel.findById(cart._id)
+				.populate('user', 'name email')
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
+
+			return res
+				.status(201)
+				.json({ ok: true, cart: populated, message: 'Product added to cart' });
+		} catch (error) {
+			console.error('Error adding item to cart:', error);
+			return res.status(500).json({ error: 'Error adding item to cart' });
+		}
+	},
+
+	addCustomItemToCart: async (req: AuthRequest, res: Response) => {
+		try {
+			const userId = req.user?.id;
+			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+			const { quantity, color, size, name, description, woodType, quotationId } = req.body;
+
+			if (!name || !description)
+				return res.status(400).json({ message: 'name and description required' });
+			if (!color) return res.status(400).json({ message: 'color is required' });
+
+			const imageUrl = (req as any).file?.path || null;
+
+			let cart;
+
+			if (quotationId) {
+				// Modo admin: busca por ID, no crea nada si no existe
+				cart = await QuotationModel.findById(quotationId);
+				if (!cart) return res.status(404).json({ message: 'Quotation not found' });
+			} else {
+				// Modo cliente: busca o crea el carrito del usuario
+				cart = await QuotationModel.findOne({ user: userId, status: 'Carrito' });
+				if (!cart)
+					cart = await QuotationModel.create({
+						user: userId,
+						status: 'Carrito',
+						items: [],
+					});
+			}
+
+			cart.items.push({
+				product: null,
+				isCustom: true,
+				customDetails: {
+					name,
+					description,
+					woodType: woodType || 'Por definir',
+					referenceImage: imageUrl,
+				},
+				quantity: Number(quantity) || 1,
+				color,
+				size: size || '',
+				price: 0,
+				itemStatus: 'pending_quote',
+			});
+
+			await cart.save();
+
+			const populated = await QuotationModel.findById(cart._id).populate('items.product');
+
+			return res.status(201).json({ ok: true, cart: populated });
+		} catch (error) {
+			console.error(error);
+			return res.status(500).json({ error: 'Error adding custom item' });
+		}
+	},
+
+	updateCartItemQuantity: async (req: AuthRequest, res: Response) => {
+		try {
+			const userId = req.user?.id;
+			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+			const { itemId, quantity } = req.body;
+
+			if (!itemId || !quantity || quantity < 1)
+				return res.status(400).json({ message: 'Valid itemId and quantity are required' });
+
+			const cart = await QuotationModel.findOne({ user: userId, status: 'Carrito' });
+			if (!cart) return res.status(404).json({ message: 'Cart not found' });
+
+			const item = cart.items.id(itemId);
+			if (!item) return res.status(404).json({ message: 'Item not found in cart' });
+
+			item.quantity = quantity;
+			await cart.save();
+
+			const populated = await QuotationModel.findById(cart._id)
+				.populate('user', 'name email')
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
+
+			return res.status(200).json({ ok: true, cart: populated });
+		} catch (error) {
+			console.error('Error updating item quantity:', error);
+			return res.status(500).json({ error: 'Error updating quantity' });
+		}
+	},
+
+	removeCartItem: async (req: AuthRequest, res: Response) => {
+		try {
+			const userId = req.user?.id;
+			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+			const { itemId } = req.params;
+
+			const cart = await QuotationModel.findOne({ user: userId, status: 'Carrito' });
+			if (!cart) return res.status(404).json({ message: 'Cart not found' });
+
+			const itemToRemove = cart.items.id(itemId);
+			if (!itemToRemove) return res.status(404).json({ message: 'Item not found in cart' });
+
+			itemToRemove.deleteOne();
+			await cart.save();
+
+			const populated = await QuotationModel.findById(cart._id)
+				.populate('user', 'name email')
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
+
+			return res
+				.status(200)
+				.json({ ok: true, cart: populated, message: 'Item removed successfully' });
+		} catch (error) {
+			console.error('Error removing cart item:', error);
+			return res.status(500).json({ error: 'Error removing item' });
+		}
+	},
+
+	requestQuotation: async (req: AuthRequest, res: Response) => {
+		try {
+			const userId = req.user?.id;
+			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+			const cart = await QuotationModel.findOne({ user: userId, status: 'Carrito' });
+			if (!cart || cart.items.length === 0)
+				return res.status(400).json({ message: 'Cart is empty' });
+
+			cart.status = 'Solicitada';
+			await cart.save();
+
+			const populated = await QuotationModel.findById(cart._id)
+				.populate('user', 'name email')
+				.populate({ path: 'items.product', select: 'name imageUrl description category' });
+
+			return res.status(200).json({
+				ok: true,
+				quotation: populated,
+				message: 'Quotation requested successfully',
+			});
+		} catch (error) {
+			console.error('Error requesting quotation:', error);
+			return res.status(500).json({ error: 'Error requesting quotation' });
 		}
 	},
 };

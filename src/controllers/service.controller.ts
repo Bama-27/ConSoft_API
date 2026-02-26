@@ -8,10 +8,13 @@ export const ServiceController = {
 	...base,
 	create: async (req: Request, res: Response) => {
 		try {
-			const { name, description, imageUrl, status } = req.body ?? {};
+			const { name, description, status } = req.body ?? {};
 			if (!name || typeof name !== 'string' || !name.trim()) {
 				return res.status(400).json({ message: 'name is required' });
 			}
+
+			const imageUrl = (req as any).file?.path || null; // ← igual que en productos
+
 			const created = await ServiceModel.create({
 				name: name.trim(),
 				description,

@@ -8,6 +8,7 @@ import { OAuth2Client } from 'google-auth-library';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { sendEmail } from '../utils/mailer';
+import { RoleModel } from '../models/role.model';
 
 export const AuthController = {
 	login: async (req: Request, res: Response) => {
@@ -49,6 +50,50 @@ export const AuthController = {
 			res.status(200).json({ message: 'Login successful' });
 		} catch (err) {
 			res.status(500).json({ error: 'Error during login' });
+		}
+	},
+
+	// Registro público con cookie httpOnly
+	register: async (req: Request, res: Response) => {
+		try {
+			const { name, email, password } = req.body ?? {};
+			if (!name || !email || !password) {
+				return res.status(400).json({ message: 'name, email and password are required' });
+			}
+			const existing = await UserModel.findOne({ email });
+			if (existing) {
+				return res.status(400).json({ message: 'This email is already in use' });
+			}
+			const hasUppercase = typeof password === 'string' && /[A-Z]/.test(password);
+			const hasNumber = typeof password === 'string' && /\d/.test(password);
+			const hasSpecial = typeof password === 'string' && /[^A-Za-z0-9]/.test(password);
+			if (!hasUppercase || !hasNumber || !hasSpecial) {
+				return res.status(400).json({
+					message:
+						'Password must include at least one uppercase letter, one number, and one special character',
+				});
+			}
+			const hashedPass = await hash(password, 10);
+			let roleId: string | undefined = env.defaultUserRoleId;
+			if (!roleId) {
+				let fallbackRole = await RoleModel.findOne({ name: { $in: ['Usuario', 'Cliente'] } }).select('_id');
+				if (!fallbackRole) {
+					await RoleModel.create({ name: 'Usuario', description: 'Usuario estándar' });
+					fallbackRole = await RoleModel.findOne({ name: 'Usuario' }).select('_id');
+				}
+				roleId = String((fallbackRole as any)._id);
+			}
+			const user = await UserModel.create({ name, email, password: hashedPass, role: roleId });
+			const token = generateToken({ id: user._id, email: user.email });
+			res.cookie('token', token, {
+				httpOnly: true,
+				secure: env.nodeEnv === 'production',
+				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+				maxAge: 1000 * 60 * 60 * 2,
+			});
+			return res.status(201).json({ ok: true, message: 'User registered successfully' });
+		} catch (_e) {
+			return res.status(500).json({ error: 'Error during register' });
 		}
 	},
 
@@ -100,7 +145,7 @@ export const AuthController = {
 			res.clearCookie('token', {
 				httpOnly: true,
 				secure: env.nodeEnv === 'production',
-				sameSite: 'strict',
+				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
 			});
 			res.json({ message: 'Logout successful' });
 		} catch (err) {
