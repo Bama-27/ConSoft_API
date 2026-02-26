@@ -334,7 +334,7 @@ export const quotationController = {
 
 					await OrderModel.create({
 						user: quotation.user as any,
-						status: 'En Proceso',
+						status: 'En proceso',
 						startedAt: new Date(),
 						items,
 					} as any);
