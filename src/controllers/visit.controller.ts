@@ -50,8 +50,7 @@ export const VisitController = {
 	...base,
 
 	list: async (req: Request, res: Response) => {
-		const visits = await VisitModel.find()
-			.populate('user', 'name email') // ✔ user es un ObjectId
+		const visits = await VisitModel.find().populate('user', 'name email'); // ✔ user es un ObjectId
 		return res.json({ ok: true, visits });
 	},
 
@@ -188,11 +187,15 @@ export const VisitController = {
 				YEAR: new Date().getFullYear(),
 			});
 
-			await sendEmail({
-				to: emailTo,
-				subject: 'Confirmación de visita agendada',
-				html,
-			});
+			try {
+				await sendEmail({
+					to: emailTo,
+					subject: 'Confirmación de visita agendada',
+					html,
+				});
+			} catch (mailError) {
+				console.error('Email failed but visit was created:', mailError);
+			}
 
 			return res.status(201).json({
 				ok: true,
@@ -321,7 +324,7 @@ export const VisitController = {
 			if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 			const visits = await VisitModel.find({ user: userId })
 				.sort({ visitDate: -1 })
-				.populate('user', 'name email')
+				.populate('user', 'name email');
 			return res.json({ ok: true, visits });
 		} catch (e) {
 			return res.status(500).json({ error: 'Error fetching visits' });
