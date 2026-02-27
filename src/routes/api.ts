@@ -55,6 +55,9 @@ if (ServiceController.get) router.get('/services/:id', ServiceController.get);
 if ((VisitController as any).createForMe)
 	router.post('/visits/mine', optionalAuth, (VisitController as any).createForMe);
 
+// Reseñas de pedidos (público)
+router.get('/orders/:id/reviews', (OrderController as any).listReviews);
+
 // === RUTAS PROTEGIDAS === //
 router.use(verifyToken);
 // Cambio de contraseña (autenticado)
@@ -75,8 +78,7 @@ if (ServiceController.create)
 if (UserController.update)
 	router.put('/users/:id', upload.single('profile_picture'), UserController.update);
 
-// Reseñas asociadas a pedidos
-router.get('/orders/:id/reviews', (OrderController as any).listReviews);
+// Reseñas asociadas a pedidos (crear requiere login)
 router.post('/orders/:id/reviews', (OrderController as any).createReview);
 // Adjuntar imágenes a un pedido existente (propietario)
 if ((OrderController as any).addAttachments)
