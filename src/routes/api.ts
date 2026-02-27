@@ -56,6 +56,7 @@ if ((VisitController as any).createForMe)
 	router.post('/visits/mine', optionalAuth, (VisitController as any).createForMe);
 
 // Reseñas de pedidos (público)
+router.get('/orders/reviews', (OrderController as any).listAllReviews);
 router.get('/orders/:id/reviews', (OrderController as any).listReviews);
 
 // === RUTAS PROTEGIDAS === //

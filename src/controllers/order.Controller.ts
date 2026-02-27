@@ -93,6 +93,9 @@ export const OrderController = {
 	// ✅ MÉTODO EXISTENTE: Obtener un pedido por ID
 	get: async (req: Request, res: Response) => {
 		try {
+			if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+				return res.status(404).json({ message: 'Order not found (Invalid ID)' });
+			}
 			const order = await OrderModel.findById(req.params.id)
 				.populate('user', '-password -__v ')
 				.populate('payments')
@@ -177,6 +180,35 @@ export const OrderController = {
 		} catch (_e) {
 			console.error('Error listing reviews:', _e);
 			return res.status(500).json({ message: 'Error listing reviews' });
+		}
+	},
+
+	// ✅ MÉTODO NUEVO: Listar todas las reseñas de todos los pedidos (Público)
+	listAllReviews: async (_req: Request, res: Response) => {
+		try {
+			const orders = await OrderModel.find({ 'reviews.0': { $exists: true } })
+				.select('reviews user')
+				.populate('user', 'name')
+				.lean();
+
+			const allReviews = orders.flatMap((order: any) =>
+				(order.reviews || []).map((review: any) => ({
+					...review,
+					orderId: order._id,
+					userName: order.user?.name || 'Cliente',
+				})),
+			);
+
+			// Ordenar por fecha descendente
+			allReviews.sort(
+				(a: any, b: any) =>
+					new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+			);
+
+			return res.json({ ok: true, reviews: allReviews });
+		} catch (error) {
+			console.error('Error listing all reviews:', error);
+			return res.status(500).json({ message: 'Error listing all reviews' });
 		}
 	},
 
