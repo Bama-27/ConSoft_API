@@ -330,4 +330,62 @@ export const VisitController = {
 			return res.status(500).json({ error: 'Error fetching visits' });
 		}
 	},
+
+	// Consultar horas disponibles para una fecha específica
+	getAvailableSlots: async (req: Request, res: Response) => {
+		try {
+			const { date } = req.query; // Esperamos YYYY-MM-DD
+			if (!date || typeof date !== 'string') {
+				return res.status(400).json({ message: 'date query parameter is required' });
+			}
+
+			// Definimos los slots posibles (por ejemplo de 08:00 a 20:00 cada hora)
+			const slots = [
+				'08:00',
+				'09:00',
+				'10:00',
+				'11:00',
+				'12:00',
+				'13:00',
+				'14:00',
+				'15:00',
+				'16:00',
+				'17:00',
+				'18:00',
+				'19:00',
+				'20:00',
+			];
+
+			// Buscamos visitas existentes para ese día
+			const dayStart = new Date(`${date}T00:00:00`);
+			const dayEnd = new Date(`${date}T23:59:59`);
+
+			const existingVisits = await VisitModel.find({
+				visitDate: {
+					$gte: dayStart,
+					$lte: dayEnd,
+				},
+				status: { $nin: ['cancelada', 'cancelado'] },
+			}).select('visitDate');
+
+			const availableSlots = slots.filter((slot) => {
+				const slotDate = new Date(`${date}T${slot}`);
+				if (Number.isNaN(slotDate.getTime())) return false;
+
+				// Regla: si hay una visita a las T, se bloquean T-3h y T+3h (exclusivo)
+				// Es decir, slot S está disponible si para toda visita V, |V - S| >= 3h
+				return !existingVisits.some((visit) => {
+					const visitDate = visit.visitDate;
+					const diffMs = Math.abs(visitDate.getTime() - slotDate.getTime());
+					const threeHoursMs = 3 * 60 * 60 * 1000;
+					return diffMs < threeHoursMs;
+				});
+			});
+
+			return res.json({ ok: true, availableSlots });
+		} catch (e) {
+			console.error('Error fetching available slots:', e);
+			return res.status(500).json({ error: 'Error fetching available slots' });
+		}
+	},
 };

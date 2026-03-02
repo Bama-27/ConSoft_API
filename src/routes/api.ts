@@ -52,6 +52,8 @@ if (ProductController.list) router.get('/products', ProductController.list);
 if (ProductController.get) router.get('/products/:id', ProductController.get);
 if (ServiceController.list) router.get('/services', ServiceController.list);
 if (ServiceController.get) router.get('/services/:id', ServiceController.get);
+if ((VisitController as any).getAvailableSlots)
+	router.get('/visits/available-slots', (VisitController as any).getAvailableSlots);
 if ((VisitController as any).createForMe)
 	router.post('/visits/mine', optionalAuth, (VisitController as any).createForMe);
 
