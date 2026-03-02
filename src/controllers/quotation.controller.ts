@@ -321,7 +321,7 @@ export const quotationController = {
 
 				const existingOrder = await OrderModel.findOne({
 					user: quotation.user as any,
-					status: 'En Proceso',
+					status: 'Pendiente',
 					startedAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) },
 				});
 
@@ -329,12 +329,12 @@ export const quotationController = {
 					const items = (quotation.items ?? []).map((item) => ({
 						detalles: item.adminNotes ?? 'Sin notas del administrador',
 						valor: (item.price ?? 0) * item.quantity,
-						id_servicio: '6935c21d5a32d156edbfe527',
+						id_servicio: '6999d686f21e5a62a1823865',
 					}));
 
 					await OrderModel.create({
 						user: quotation.user as any,
-						status: 'En Proceso',
+						status: 'Pendiente',
 						startedAt: new Date(),
 						items,
 					} as any);

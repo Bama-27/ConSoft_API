@@ -146,52 +146,55 @@ export const DashboardController = {
 				};
 
 				const monthlyAgg = await OrderModel.aggregate([
-				{ $match: paidOrdersMatch },
-				{
-					$addFields: {
-						total: {
-							$sum: {
-								$map: {
-									input: '$items',
-									as: 'it',
-									in: { $ifNull: ['$$it.valor', 0] },
+					{ $match: paidOrdersMatch },
+					{
+						$addFields: {
+							total: {
+								$sum: {
+									$map: {
+										input: '$items',
+										as: 'it',
+										in: { $ifNull: ['$$it.valor', 0] },
+									},
 								},
 							},
-						},
-						paid: {
-							$sum: {
-								$map: {
-									input: {
-										$filter: {
-											input: '$payments',
-											as: 'p',
-											cond: {
-												$in: [
-													{ $toLower: { $ifNull: ['$$p.status', ''] } },
-													APPROVED,
-												],
+							paid: {
+								$sum: {
+									$map: {
+										input: {
+											$filter: {
+												input: '$payments',
+												as: 'p',
+												cond: {
+													$in: [
+														{ $toLower: { $ifNull: ['$$p.status', ''] } },
+														APPROVED,
+													],
+												},
 											},
 										},
+										as: 'ap',
+										in: { $ifNull: ['$$ap.amount', 0] },
 									},
-									as: 'ap',
-									in: { $ifNull: ['$$ap.amount', 0] },
 								},
 							},
 						},
 					},
-				},
-				{ $match: { $expr: { $gte: ['$paid', '$total'] } } },
-				{
-					$group: {
-						_id: {
-							year: { $year: '$startedAt' },
-							month: { $month: '$startedAt' },
+					{
+						$group: {
+							_id: {
+								year: { $year: '$startedAt' },
+								month: { $month: '$startedAt' },
+							},
+							revenue: { $sum: '$paid' },
+							sales: {
+								$sum: {
+									$cond: [{ $gte: ['$paid', '$total'] }, 1, 0]
+								}
+							},
 						},
-						revenue: { $sum: '$total' },
-						sales: { $sum: 1 },
 					},
-				},
-				{ $sort: { '_id.year': 1, '_id.month': 1 } },
+					{ $sort: { '_id.year': 1, '_id.month': 1 } },
 				]);
 
 				const monthlyMap = new Map<string, { revenue: number; sales: number }>();
@@ -237,112 +240,115 @@ export const DashboardController = {
 				});
 
 				const totalsAgg = await OrderModel.aggregate([
-				{ $match: paidOrdersMatch },
-				{
-					$addFields: {
-						total: {
-							$sum: {
-								$map: {
-									input: '$items',
-									as: 'it',
-									in: { $ifNull: ['$$it.valor', 0] },
+					{ $match: paidOrdersMatch },
+					{
+						$addFields: {
+							total: {
+								$sum: {
+									$map: {
+										input: '$items',
+										as: 'it',
+										in: { $ifNull: ['$$it.valor', 0] },
+									},
 								},
 							},
-						},
-						paid: {
-							$sum: {
-								$map: {
-									input: {
-										$filter: {
-											input: '$payments',
-											as: 'p',
-											cond: {
-												$in: [
-													{ $toLower: { $ifNull: ['$$p.status', ''] } },
-													APPROVED,
-												],
+							paid: {
+								$sum: {
+									$map: {
+										input: {
+											$filter: {
+												input: '$payments',
+												as: 'p',
+												cond: {
+													$in: [
+														{ $toLower: { $ifNull: ['$$p.status', ''] } },
+														APPROVED,
+													],
+												},
 											},
 										},
+										as: 'ap',
+										in: { $ifNull: ['$$ap.amount', 0] },
 									},
-									as: 'ap',
-									in: { $ifNull: ['$$ap.amount', 0] },
 								},
 							},
 						},
 					},
-				},
-				{ $match: { $expr: { $gte: ['$paid', '$total'] } } },
-				{
-					$group: {
-						_id: null,
-						totalRevenue: { $sum: '$total' },
-						totalSales: { $sum: 1 },
+					{
+						$group: {
+							_id: null,
+							totalRevenue: { $sum: '$paid' },
+							totalSales: {
+								$sum: {
+									$cond: [{ $gte: ['$paid', '$total'] }, 1, 0]
+								}
+							},
+						},
 					},
-				},
 				]);
 				const totals = (totalsAgg?.[0] as any) ?? { totalRevenue: 0, totalSales: 0 };
 
 				const topProductsAgg = await OrderModel.aggregate([
-				{ $match: paidOrdersMatch },
-				{ $unwind: '$items' },
-				{ $match: { 'items.tipo': 'producto', 'items.id_producto': { $ne: null } } },
-				{
-					$group: {
-						_id: '$items.id_producto',
-						quantity: { $sum: { $ifNull: ['$items.cantidad', 1] } },
+					{ $match: paidOrdersMatch },
+					{ $unwind: '$items' },
+					{ $match: { 'items.tipo': 'producto', 'items.id_producto': { $ne: null } } },
+					{
+						$group: {
+							_id: '$items.id_producto',
+							quantity: { $sum: { $ifNull: ['$items.cantidad', 1] } },
+						},
 					},
-				},
-				{ $sort: { quantity: -1 } },
-				{ $limit: limit },
-				{
-					$lookup: {
-						from: 'productos',
-						localField: '_id',
-						foreignField: '_id',
-						as: 'product',
+					{ $sort: { quantity: -1 } },
+					{ $limit: limit },
+					{
+						$lookup: {
+							from: 'productos',
+							localField: '_id',
+							foreignField: '_id',
+							as: 'product',
+						},
 					},
-				},
-				{ $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
-				{
-					$project: {
-						_id: 0,
-						id: '$_id',
-						name: '$product.name',
-						quantity: 1,
+					{ $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
+					{
+						$project: {
+							_id: 0,
+							id: '$_id',
+							name: '$product.name',
+							quantity: 1,
+						},
 					},
-				},
-			]);
+				]);
 
 				const topServicesAgg = await OrderModel.aggregate([
-				{ $match: paidOrdersMatch },
-				{ $unwind: '$items' },
-				{ $match: { 'items.tipo': 'servicio', 'items.id_servicio': { $ne: null } } },
-				{
-					$group: {
-						_id: '$items.id_servicio',
-						quantity: { $sum: { $ifNull: ['$items.cantidad', 1] } },
+					{ $match: paidOrdersMatch },
+					{ $unwind: '$items' },
+					{ $match: { 'items.tipo': 'servicio', 'items.id_servicio': { $ne: null } } },
+					{
+						$group: {
+							_id: '$items.id_servicio',
+							quantity: { $sum: { $ifNull: ['$items.cantidad', 1] } },
+						},
 					},
-				},
-				{ $sort: { quantity: -1 } },
-				{ $limit: limit },
-				{
-					$lookup: {
-						from: 'servicios',
-						localField: '_id',
-						foreignField: '_id',
-						as: 'service',
+					{ $sort: { quantity: -1 } },
+					{ $limit: limit },
+					{
+						$lookup: {
+							from: 'servicios',
+							localField: '_id',
+							foreignField: '_id',
+							as: 'service',
+						},
 					},
-				},
-				{ $unwind: { path: '$service', preserveNullAndEmptyArrays: true } },
-				{
-					$project: {
-						_id: 0,
-						id: '$_id',
-						name: '$service.name',
-						quantity: 1,
+					{ $unwind: { path: '$service', preserveNullAndEmptyArrays: true } },
+					{
+						$project: {
+							_id: 0,
+							id: '$_id',
+							name: '$service.name',
+							quantity: 1,
+						},
 					},
-				},
-			]);
+				]);
 
 				return {
 					range: { from: from.toISOString(), to: to.toISOString() },
