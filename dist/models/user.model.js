@@ -15,4 +15,6 @@ const UserSchema = new mongoose_1.Schema({
     registeredAt: { type: Date, default: () => new Date() },
     favorites: [{ type: mongoose_1.Types.ObjectId, ref: 'Producto' }],
 });
+// Índices útiles
+UserSchema.index({ role: 1 });
 exports.UserModel = (0, mongoose_1.model)('User', UserSchema);

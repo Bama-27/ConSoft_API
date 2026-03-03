@@ -13,4 +13,6 @@ CategorySchema.virtual('products', {
     foreignField: 'category',
 });
 CategorySchema.set('toJSON', { virtuals: true });
+// Índice por nombre para búsquedas
+CategorySchema.index({ name: 1 });
 exports.CategoryModel = (0, mongoose_1.model)('Categoria', CategorySchema);

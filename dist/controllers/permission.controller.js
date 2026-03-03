@@ -6,6 +6,23 @@ const crud_controller_1 = require("./crud.controller");
 const base = (0, crud_controller_1.createCrudController)(permission_model_1.PermissionModel);
 exports.PermissionController = {
     ...base,
+    create: async (req, res) => {
+        try {
+            const { module, action } = req.body ?? {};
+            if (!module || typeof module !== 'string' || !module.trim()) {
+                return res.status(400).json({ message: 'module is required' });
+            }
+            if (!action || typeof action !== 'string' || !action.trim()) {
+                return res.status(400).json({ message: 'action is required' });
+            }
+            const perm = await permission_model_1.PermissionModel.create({ module: module.trim(), action: action.trim() });
+            return res.status(201).json(perm);
+        }
+        catch (err) {
+            console.error(err);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+    },
     list: async (req, res) => {
         try {
             const permisos = await permission_model_1.PermissionModel.aggregate([
