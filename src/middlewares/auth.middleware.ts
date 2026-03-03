@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt, { Secret } from 'jsonwebtoken';
 import { env } from '../config/env';
 import { UserModel } from '../models/user.model';
+import { generateToken } from '../utils/jwt';
 
 export interface AuthRequest extends Request {
 	user?: any;
@@ -21,14 +22,14 @@ function readBearerToken(req: Request): string | null {
 
 export async function verifyToken(req: AuthRequest, res: Response, next: NextFunction) {
 	try {
-		const token = req.cookies?.token || readBearerToken(req);
+		const secret: Secret = env.jwt_secret;
+		const rawAccess = req.cookies?.token || readBearerToken(req);
 
-		if (!token) {
-			return res.status(401).json({ message: 'Acces denied. No token provided' });
+		if (!rawAccess) {
+			return res.status(401).json({ message: 'Access denied. No token provided' });
 		}
 
-		const secret: Secret = env.jwt_secret;
-		const decoded = jwt.verify(token, secret) as any;
+		const decoded = jwt.verify(rawAccess, secret) as any;
 		const userId = decoded?.id;
 		if (!userId) {
 			return res.status(403).json({ message: 'Invalid token payload' });

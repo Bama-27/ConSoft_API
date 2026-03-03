@@ -33,6 +33,7 @@ function mountCrud(path: string, controller: any) {
 // === RUTAS PUBLICAS === //
 router.post('/auth/login', AuthController.login);
 router.post('/auth/logout', AuthController.logout);
+router.post('/auth/refresh', AuthController.refresh);
 router.get('/auth/me', verifyToken, AuthController.me);
 router.post('/auth/google', AuthController.google);
 router.post('/auth/profile', verifyToken, AuthController.profile);
