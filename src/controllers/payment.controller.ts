@@ -69,26 +69,10 @@ export const PaymentController = {
 
 			const payments = orders.map((order) => {
 				const totals = PaymentController.calculateOrderTotals(order);
-
-				let acumulado = Number(order.initialPayment?.amount || 0);
-				const APPROVED = new Set(['aprobado', 'approved', 'confirmado', 'pagado', 'paid']);
-
-				const pagosConRestante = order.payments.map((p) => {
-					const status = String(p.status || '').toLowerCase();
-					if (APPROVED.has(status)) {
-						acumulado += p.amount || 0;
-					}
-					return {
-						...p.toObject(),
-						restante: totals.total - acumulado,
-					};
-				});
-
 				return {
 					...totals,
 					_id: order._id,
-					paid: totals.paidApproved, // compatible con acumulado previo
-					payments: pagosConRestante,
+					paid: totals.paidApproved,
 				};
 			});
 
@@ -107,24 +91,10 @@ export const PaymentController = {
 
 			const totals = PaymentController.calculateOrderTotals(order);
 
-			let acumulado = 0;
-			const APPROVED = new Set(['aprobado', 'approved', 'confirmado', 'pagado', 'paid']);
-			const pagosConRestante = order.payments.map((p) => {
-				const status = String(p.status || '').toLowerCase();
-				if (APPROVED.has(status)) {
-					acumulado += p.amount || 0;
-				}
-				return {
-					...p.toObject(),
-					restante: totals.total - acumulado,
-				};
-			});
-
 			return res.json({
 				...totals,
 				_id: order._id,
 				paid: totals.paidApproved,
-				payments: pagosConRestante,
 			});
 		} catch (error) {
 			console.error(error);
