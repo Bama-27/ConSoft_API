@@ -12,23 +12,54 @@ export const PaymentController = {
 			(sum: number, item: any) => sum + (item?.valor || 0),
 			0,
 		);
-		const APPROVED = new Set(['aprobado', 'confirmado']);
-		const paid = (order?.payments ?? []).reduce((sum: number, p: any) => {
+		const APPROVED = new Set(['aprobado', 'approved', 'confirmado', 'pagado', 'paid']);
+		const PENDING = new Set(['pendiente', 'pending', 'en_revision', 'en_proceso', 'processing']);
+
+		let paidApproved = Number(order?.initialPayment?.amount || 0);
+		let paidPending = 0;
+
+		// Ordenar pagos por fecha
+		const sortedPayments = [...(order?.payments ?? [])].sort((a, b) =>
+			new Date(a.paidAt).getTime() - new Date(b.paidAt).getTime()
+		);
+
+		let runningTotal = Number(order?.initialPayment?.amount || 0);
+		const historyPayments = sortedPayments.map(p => {
 			const status = String(p?.status || '').toLowerCase();
-			return APPROVED.has(status) ? sum + (p?.amount || 0) : sum;
-		}, 0);
+			const amount = Number(p.amount || 0);
+			if (APPROVED.has(status)) {
+				paidApproved += amount;
+			} else if (PENDING.has(status)) {
+				paidPending += amount;
+			}
+			runningTotal += amount;
+
+			const pObj = typeof p.toObject === 'function' ? p.toObject() : p;
+
+			return {
+				...pObj,
+				proyectado: total - runningTotal
+			};
+		});
+
+		const paidTotal = paidApproved + paidPending;
 
 		// 🔥 Agregar información del abono inicial
-		const initialPayment = order?.initialPayment?.amount || 0;
-		const necesitaAbono = initialPayment < total * 0.3;
-		const porcentajeAbono = total > 0 ? (initialPayment / total) * 100 : 0;
+		const initialPaymentValue = order?.initialPayment?.amount || 0;
+		const necesitaAbono = initialPaymentValue < total * 0.3;
+		const porcentajeAbono = total > 0 ? (initialPaymentValue / total) * 100 : 0;
 
 		return {
 			total,
-			paid,
-			restante: total - paid,
+			paid: paidApproved,
+			paidApproved,
+			paidPending,
+			paidTotal,
+			restante: total - paidApproved,
+			restanteConPendientes: total - paidTotal,
 			necesitaAbono,
 			porcentajeAbono,
+			payments: historyPayments
 		};
 	},
 
@@ -37,11 +68,10 @@ export const PaymentController = {
 			const orders = await OrderModel.find();
 
 			const payments = orders.map((order) => {
-				const { total, paid, restante, necesitaAbono, porcentajeAbono } =
-					PaymentController.calculateOrderTotals(order);
+				const totals = PaymentController.calculateOrderTotals(order);
 
-				let acumulado = 0;
-				const APPROVED = new Set(['aprobado', 'confirmado']);
+				let acumulado = Number(order.initialPayment?.amount || 0);
+				const APPROVED = new Set(['aprobado', 'approved', 'confirmado', 'pagado', 'paid']);
 
 				const pagosConRestante = order.payments.map((p) => {
 					const status = String(p.status || '').toLowerCase();
@@ -50,17 +80,14 @@ export const PaymentController = {
 					}
 					return {
 						...p.toObject(),
-						restante: total - acumulado,
+						restante: totals.total - acumulado,
 					};
 				});
 
 				return {
+					...totals,
 					_id: order._id,
-					total,
-					paid: acumulado,
-					restante: total - acumulado,
-					necesitaAbono,
-					porcentajeAbono,
+					paid: totals.paidApproved, // compatible con acumulado previo
 					payments: pagosConRestante,
 				};
 			});
@@ -78,11 +105,10 @@ export const PaymentController = {
 			const order = await OrderModel.findById(orderId);
 			if (!order) return res.status(404).json({ message: 'Order not found' });
 
-			const { total, paid, restante, necesitaAbono, porcentajeAbono } =
-				PaymentController.calculateOrderTotals(order);
+			const totals = PaymentController.calculateOrderTotals(order);
 
 			let acumulado = 0;
-			const APPROVED = new Set(['aprobado', 'confirmado']);
+			const APPROVED = new Set(['aprobado', 'approved', 'confirmado', 'pagado', 'paid']);
 			const pagosConRestante = order.payments.map((p) => {
 				const status = String(p.status || '').toLowerCase();
 				if (APPROVED.has(status)) {
@@ -90,17 +116,14 @@ export const PaymentController = {
 				}
 				return {
 					...p.toObject(),
-					restante: total - acumulado,
+					restante: totals.total - acumulado,
 				};
 			});
 
 			return res.json({
+				...totals,
 				_id: order._id,
-				total,
-				paid: acumulado,
-				restante: total - acumulado,
-				necesitaAbono,
-				porcentajeAbono,
+				paid: totals.paidApproved,
 				payments: pagosConRestante,
 			});
 		} catch (error) {
