@@ -34,12 +34,55 @@ const calcDiasRestantes = (start?: any) => {
 // 🔥 Helper function para calcular totales
 const calculateOrderTotals = (order: any) => {
 	const total = (order?.items ?? []).reduce((sum: number, item: any) => sum + (item?.valor || 0), 0);
-	const APPROVED = new Set(['aprobado', 'confirmado']);
-	const paid = (order?.payments ?? []).reduce((sum: number, p: any) => {
+	const APPROVED = new Set(['aprobado', 'approved', 'confirmado', 'pagado', 'paid']);
+	const PENDING = new Set(['pendiente', 'pending', 'en_revision', 'en_proceso', 'processing']);
+
+	let paidApproved = Number(order?.initialPayment?.amount || 0);
+	let paidPending = 0;
+
+	// Determinar el total base
+	const totalValue = total;
+
+	// Ordenar pagos por fecha para el histórico
+	const sortedPayments = [...(order?.payments ?? [])].sort((a, b) =>
+		new Date(a.paidAt).getTime() - new Date(b.paidAt).getTime()
+	);
+
+	let runningTotal = Number(order?.initialPayment?.amount || 0);
+	const historyPayments = sortedPayments.map(p => {
 		const status = String(p?.status || '').toLowerCase();
-		return APPROVED.has(status) ? sum + (p?.amount || 0) : sum;
-	}, 0);
-	return { total, paid, restante: total - paid };
+		const amount = Number(p.amount || 0);
+
+		if (APPROVED.has(status)) {
+			paidApproved += amount;
+		} else if (PENDING.has(status)) {
+			paidPending += amount;
+		}
+
+		// El "proyectado" resta el pago actual del acumulado histórico
+		// Incluimos tanto aprobados como pendientes para la visualización del admin
+		runningTotal += amount;
+
+		const pObj = typeof p.toObject === 'function' ? p.toObject() : p;
+
+		return {
+			...pObj,
+			proyectado: totalValue - runningTotal
+		};
+	});
+
+	const paidTotal = paidApproved + paidPending;
+
+	return {
+		total,
+		paid: paidApproved,
+		paidApproved,
+		paidPending,
+		paidTotal,
+		restante: total - paidApproved,
+		restanteConPendientes: total - paidTotal,
+		payments: historyPayments
+	};
 };
 
 export const OrderController = {
@@ -98,14 +141,13 @@ export const OrderController = {
 			}
 			const order = await OrderModel.findById(req.params.id)
 				.populate('user', '-password -__v ')
-				.populate('payments')
 				.populate('items.id_servicio')
 				.populate('items.id_producto')
 				.lean();
 
 			if (!order) return res.status(404).json({ message: 'Not found' });
 
-			const { total, paid, restante } = calculateOrderTotals(order);
+			const { total, paid, restante, paidApproved, paidPending, paidTotal, restanteConPendientes } = calculateOrderTotals(order);
 			const necesitaAbono = paid < total * 0.3;
 			const porcentajeAbono = total > 0 ? (paid / total) * 100 : 0;
 
@@ -114,6 +156,10 @@ export const OrderController = {
 				total,
 				paid,
 				restante,
+				paidApproved,
+				paidPending,
+				paidTotal,
+				restanteConPendientes,
 				necesitaAbono,
 				porcentajeAbono,
 				puedeIniciarProduccion: paid >= total * 0.3
@@ -421,23 +467,20 @@ export const OrderController = {
 			const orders = await OrderModel.find()
 				.sort({ createdAt: -1 })
 				.populate('user', '-password -__v ')
-				.populate('payments')
 				.populate('items.id_servicio')
 				.populate('items.id_producto')
 				.lean();
 
 			const result = orders
 				.map((order) => {
-					const { total, paid, restante } = calculateOrderTotals(order);
-					const necesitaAbono = paid < total * 0.3;
+					const totals = calculateOrderTotals(order);
+					const necesitaAbono = totals.paid < totals.total * 0.3;
 
 					return {
 						...order,
-						total,
-						paid,
-						restante,
+						...totals,
 						necesitaAbono,
-						paymentStatus: restante <= 0 ? 'Pagado' : 'Pendiente',
+						paymentStatus: totals.restante <= 0 ? 'Pagado' : 'Pendiente',
 					};
 				})
 				.filter((order) => order.paymentStatus != 'Pagado');
