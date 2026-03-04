@@ -147,22 +147,16 @@ export const OrderController = {
 
 			if (!order) return res.status(404).json({ message: 'Not found' });
 
-			const { total, paid, restante, paidApproved, paidPending, paidTotal, restanteConPendientes } = calculateOrderTotals(order);
-			const necesitaAbono = paid < total * 0.3;
-			const porcentajeAbono = total > 0 ? (paid / total) * 100 : 0;
+			const totals = calculateOrderTotals(order);
+			const necesitaAbono = totals.paid < totals.total * 0.3;
+			const porcentajeAbono = totals.total > 0 ? (totals.paid / totals.total) * 100 : 0;
 
 			return res.json({
 				...order,
-				total,
-				paid,
-				restante,
-				paidApproved,
-				paidPending,
-				paidTotal,
-				restanteConPendientes,
+				...totals,
 				necesitaAbono,
 				porcentajeAbono,
-				puedeIniciarProduccion: paid >= total * 0.3
+				puedeIniciarProduccion: totals.paid >= totals.total * 0.3
 			});
 		} catch (error) {
 			console.error('Error retrieving order:', error);
