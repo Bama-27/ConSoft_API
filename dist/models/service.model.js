@@ -8,4 +8,7 @@ const ServiceSchema = new mongoose_1.Schema({
     imageUrl: { type: String, trim: true },
     status: { type: Boolean, default: true },
 });
+// Índices sugeridos para búsquedas
+ServiceSchema.index({ name: 1 });
+ServiceSchema.index({ status: 1 });
 exports.ServiceModel = (0, mongoose_1.model)('Servicio', ServiceSchema);

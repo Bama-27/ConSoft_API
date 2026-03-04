@@ -1,12 +1,15 @@
 import Tesseract from 'tesseract.js';
-import fetch from 'node-fetch'; // o usa axios que ya tienes
 
 export async function extractTextFromImage(imageSource: string): Promise<string> {
 	let input: Buffer | string = imageSource;
 
 	// Si es URL remota, descargar primero
 	if (imageSource.startsWith('http')) {
-		const res = await fetch(imageSource);
+		const fetchFn = (globalThis as any).fetch as undefined | ((...args: any[]) => Promise<any>);
+		if (!fetchFn) {
+			throw new Error('fetch is not available in this runtime');
+		}
+		const res = await fetchFn(imageSource);
 		const arrayBuffer = await res.arrayBuffer();
 		input = Buffer.from(arrayBuffer);
 	}

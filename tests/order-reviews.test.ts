@@ -46,7 +46,7 @@ describe('Order reviews', () => {
 
 		const order = await OrderModel.create({
 			user: user._id,
-			status: 'entregado',
+			status: 'Completado',
 			address: 'Calle 1',
 			startedAt: new Date(),
 			items: [],
