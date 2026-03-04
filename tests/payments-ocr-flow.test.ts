@@ -44,7 +44,7 @@ describe('Payments OCR flow', () => {
 	it('preview endpoint should NOT create a payment automatically', async () => {
 		const order = await OrderModel.create({
 			user: new mongoose.Types.ObjectId(),
-			status: 'en_proceso',
+			status: 'Pendiente',
 			startedAt: new Date(),
 			items: [{ tipo: 'servicio', id_servicio: new mongoose.Types.ObjectId(), cantidad: 1, valor: 300 }],
 			payments: [],
@@ -72,7 +72,7 @@ describe('Payments OCR flow', () => {
 	it('submit endpoint should create a pending payment request', async () => {
 		const order = await OrderModel.create({
 			user: new mongoose.Types.ObjectId(),
-			status: 'en_proceso',
+			status: 'Pendiente',
 			startedAt: new Date(),
 			items: [{ tipo: 'servicio', id_servicio: new mongoose.Types.ObjectId(), cantidad: 1, valor: 300 }],
 			payments: [],

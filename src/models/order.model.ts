@@ -18,37 +18,38 @@ const AttachmentSchema = new Schema(
     type: { type: String, required: true, trim: true },
     uploadedBy: { type: Types.ObjectId, ref: 'User', required: true },
     uploadedAt: { type: Date, default: () => new Date() },
-    item_id: { type: Types.ObjectId, required: true }, 
+    item_id: { type: Types.ObjectId, required: true },
   },
   { _id: true }
 );
 
 const ReviewSchema = new Schema(
-	{
-		user: { type: Types.ObjectId, ref: 'User', required: true },
-		rating: { type: Number, required: true, min: 1, max: 5 },
-		comment: { type: String, trim: true },
-		createdAt: { type: Date, default: () => new Date() },
-	},
-	{ _id: true }
+  {
+    user: { type: Types.ObjectId, ref: 'User', required: true },
+    rating: { type: Number, required: true, min: 1, max: 5 },
+    comment: { type: String, trim: true },
+    createdAt: { type: Date, default: () => new Date() },
+  },
+  { _id: true }
 );
 
 const OrderSchema = new Schema(
   {
     user: { type: Types.ObjectId, ref: 'User', required: true },
     // 🔥 NUEVOS ESTADOS
-    status: { 
-      type: String, 
-      required: true, 
+    status: {
+      type: String,
+      required: true,
       trim: true,
-      enum: ['Pendiente', 'Pendiente (abono parcial)', 'En proceso', 'Completado', 'Cancelado'],
-      default: 'Pendiente'
+      enum: ['Pendiente', 'Pendiente (abono parcial)', 'En proceso', 'en_proceso', 'Completado', 'Cancelado'],
+      default: 'Pendiente',
+      set: (val: string) => val === 'en_proceso' ? 'En proceso' : val
     },
     address: { type: String, trim: true },
     startedAt: { type: Date },
     deliveredAt: { type: Date },
     productionStartedAt: { type: Date }, // 🔥 Cuándo inició producción (al alcanzar 30%)
-    
+
     // 🔥 NUEVO: Abono inicial
     initialPayment: {
       amount: { type: Number, default: 0 },
@@ -56,7 +57,7 @@ const OrderSchema = new Schema(
       registeredAt: { type: Date },
       registeredBy: { type: Types.ObjectId, ref: 'User' }
     },
-    
+
     items: [
       {
         tipo: { type: String, enum: ['producto', 'servicio'], required: true, trim: true, default: "servicio" },
@@ -72,11 +73,11 @@ const OrderSchema = new Schema(
     attachments: { type: [AttachmentSchema], default: [] },
     reviews: { type: [ReviewSchema], default: [] },
   },
-  {timestamps: true}
+  { timestamps: true }
 );
 
 // 🔥 Método helper para calcular totales
-OrderSchema.methods.calculateTotals = function() {
+OrderSchema.methods.calculateTotals = function () {
   const total = this.items.reduce((sum: number, item: any) => sum + (item.valor || 0), 0);
   const APPROVED = new Set(['aprobado', 'confirmado']);
   const paid = this.payments.reduce((sum: number, p: any) => {
@@ -87,11 +88,11 @@ OrderSchema.methods.calculateTotals = function() {
 };
 
 // 🔥 Método para actualizar estado según pagos
-OrderSchema.methods.updateStatusFromPayments = function() {
+OrderSchema.methods.updateStatusFromPayments = function () {
   const { total, paid } = this.calculateTotals();
   const initialAmount = this.initialPayment?.amount || 0;
   const totalWithInitial = paid; // Los pagos ya incluyen todo, pero el initialPayment ya debería estar en payments
-  
+
   if (totalWithInitial >= total) {
     this.paymentStatus = 'Pagado';
     this.status = 'Completado';

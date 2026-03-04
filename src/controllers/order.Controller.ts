@@ -106,8 +106,8 @@ export const OrderController = {
 			if (!order) return res.status(404).json({ message: 'Not found' });
 
 			const { total, paid, restante } = calculateOrderTotals(order);
-			const necesitaAbono = (order?.initialPayment?.amount || 0) < total * 0.3;
-			const porcentajeAbono = total > 0 ? ((order?.initialPayment?.amount || 0) / total) * 100 : 0;
+			const necesitaAbono = paid < total * 0.3;
+			const porcentajeAbono = total > 0 ? (paid / total) * 100 : 0;
 
 			return res.json({
 				...order,
@@ -429,7 +429,7 @@ export const OrderController = {
 			const result = orders
 				.map((order) => {
 					const { total, paid, restante } = calculateOrderTotals(order);
-					const necesitaAbono = (order?.initialPayment?.amount || 0) < total * 0.3;
+					const necesitaAbono = paid < total * 0.3;
 
 					return {
 						...order,
@@ -465,8 +465,8 @@ export const OrderController = {
 
 			const result = orders.map((order) => {
 				const { total, paid, restante } = calculateOrderTotals(order);
-				const necesitaAbono = (order?.initialPayment?.amount || 0) < total * 0.3;
-				const porcentajeAbono = total > 0 ? ((order?.initialPayment?.amount || 0) / total) * 100 : 0;
+				const necesitaAbono = paid < total * 0.3;
+				const porcentajeAbono = total > 0 ? (paid / total) * 100 : 0;
 
 				let nombre = 'Pedido';
 				const firstItem = order.items?.[0];
@@ -490,7 +490,7 @@ export const OrderController = {
 					raw: {
 						_id: order._id,
 						total,
-						initialPaymentAmount: order?.initialPayment?.amount || 0,
+						initialPaymentAmount: paid,
 						payments: order.payments,
 						status: order.status,
 					}

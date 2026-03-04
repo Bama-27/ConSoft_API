@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { UserModel } from '../models/user.model';
 import { compare, hash } from 'bcrypt';
-import { generateToken } from '../utils/jwt';
+import { generateRefreshToken, generateToken } from '../utils/jwt';
 import { env } from '../config/env';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { OAuth2Client } from 'google-auth-library';
@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { sendEmail } from '../utils/mailer';
 import { RoleModel } from '../models/role.model';
+import { RefreshTokenModel } from '../models/refreshToken.model';
 
 export const AuthController = {
 	login: async (req: Request, res: Response) => {
@@ -28,30 +29,47 @@ export const AuthController = {
 
 			const isMatch = await compare(password, user.password);
 
-			if (!isMatch) {
-				return res.status(400).json({ message: 'Incorrect password, please try again' });
-			}
-
-			const payload: any = {
-				id: user._id,
-				email: user.email,
-				address: user.address,
-			};
-
-			const token = generateToken(payload);
-
-			res.cookie('token', token, {
-				httpOnly: true,
-				secure: env.nodeEnv === 'production',
-				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
-				maxAge: 1000 * 60 * 60 * 2,
-			});
-
-			res.status(200).json({ message: 'Login successful' });
-		} catch (err) {
-			res.status(500).json({ error: 'Error during login' });
+		if (!isMatch) {
+			return res.status(400).json({ message: 'Incorrect password, please try again' });
 		}
-	},
+
+		const payload: any = {
+			id: user._id,
+			email: user.email,
+			address: user.address,
+		};
+
+		const token = generateToken(payload);
+		
+		// Generar refresh token seguro y guardarlo en BD
+		const refreshTokenValue = crypto.randomBytes(40).toString('hex');
+		const refreshTokenExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+		await RefreshTokenModel.create({
+			userId: user._id,
+			token: refreshTokenValue,
+			expiresAt: refreshTokenExpiry,
+			revoked: false,
+		});
+
+		res.cookie('token', token, {
+			httpOnly: true,
+			secure: env.nodeEnv === 'production',
+			sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+			maxAge: 1000 * 60 * 30,
+		});
+
+		res.cookie('refreshToken', refreshTokenValue, {
+			httpOnly: true,
+			secure: env.nodeEnv === 'production',
+			sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+			maxAge: 1000 * 60 * 60 * 24 * 30,
+		});
+
+		res.status(200).json({ message: 'Login successful' });
+	} catch (err) {
+		res.status(500).json({ error: 'Error during login' });
+	}
+},
 
 	// Registro público con cookie httpOnly
 	register: async (req: Request, res: Response) => {
@@ -85,11 +103,26 @@ export const AuthController = {
 			}
 			const user = await UserModel.create({ name, email, password: hashedPass, role: roleId });
 			const token = generateToken({ id: user._id, email: user.email });
+			// Generar refresh token seguro y guardarlo en BD
+			const refreshTokenValue = crypto.randomBytes(40).toString('hex');
+			const refreshTokenExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 días
+			await RefreshTokenModel.create({
+				userId: user._id,
+				token: refreshTokenValue,
+				expiresAt: refreshTokenExpiry,
+				revoked: false,
+			});
 			res.cookie('token', token, {
 				httpOnly: true,
 				secure: env.nodeEnv === 'production',
 				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
-				maxAge: 1000 * 60 * 60 * 2,
+				maxAge: 1000 * 60 * 30,
+			});
+			res.cookie('refreshToken', refreshTokenValue, {
+				httpOnly: true,
+				secure: env.nodeEnv === 'production',
+				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+				maxAge: 1000 * 60 * 60 * 24 * 30,
 			});
 			return res.status(201).json({ ok: true, message: 'User registered successfully' });
 		} catch (_e) {
@@ -127,11 +160,28 @@ export const AuthController = {
 			}
 
 			const token = generateToken({ id: user._id, email: user.email });
+		
+			// Generar refresh token seguro y guardarlo en BD
+			const refreshTokenValue = crypto.randomBytes(40).toString('hex');
+			const refreshTokenExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 días
+			await RefreshTokenModel.create({
+				userId: user._id,
+				token: refreshTokenValue,
+				expiresAt: refreshTokenExpiry,
+				revoked: false,
+			});
+		
 			res.cookie('token', token, {
 				httpOnly: true,
 				secure: env.nodeEnv === 'production',
 				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
-				maxAge: 1000 * 60 * 60 * 2,
+				maxAge: 1000 * 60 * 30,
+			});
+			res.cookie('refreshToken', refreshTokenValue, {
+				httpOnly: true,
+				secure: env.nodeEnv === 'production',
+				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+				maxAge: 1000 * 60 * 60 * 24 * 30,
 			});
 
 			return res.status(200).json({ message: 'Login successful' });
@@ -140,9 +190,20 @@ export const AuthController = {
 		}
 	},
 
-	logout: async (_req: Request, res: Response) => {
+	logout: async (req: Request, res: Response) => {
 		try {
+			// Revocar refresh token en BD si existe
+			const token = req.cookies?.refreshToken;
+			if (token) {
+				await RefreshTokenModel.updateOne({ token, revoked: false }, { revoked: true });
+			}
+
 			res.clearCookie('token', {
+				httpOnly: true,
+				secure: env.nodeEnv === 'production',
+				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+			});
+			res.clearCookie('refreshToken', {
 				httpOnly: true,
 				secure: env.nodeEnv === 'production',
 				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
@@ -150,6 +211,63 @@ export const AuthController = {
 			res.json({ message: 'Logout successful' });
 		} catch (err) {
 			res.status(500).json({ error: 'Error during logout' });
+		}
+	},
+
+	refresh: async (req: Request, res: Response) => {
+		try {
+			const token = req.cookies?.refreshToken;
+			if (!token) return res.status(401).json({ message: 'Refresh token required' });
+
+			// Validar que el token existe en BD y no está revocado
+			const storedToken = await RefreshTokenModel.findOne({ token, revoked: false });
+			if (!storedToken) {
+				return res.status(403).json({ message: 'Invalid or revoked refresh token' });
+			}
+
+			// Validar que no ha expirado
+			if (storedToken.expiresAt < new Date()) {
+				await RefreshTokenModel.updateOne({ _id: storedToken._id }, { revoked: true });
+				return res.status(403).json({ message: 'Refresh token expired' });
+			}
+
+			// Obtener usuario
+			const dbUser = await UserModel.findById(storedToken.userId).select('email address');
+			if (!dbUser) {
+				await RefreshTokenModel.updateOne({ _id: storedToken._id }, { revoked: true });
+				return res.status(401).json({ message: 'User not found' });
+			}
+
+			// Revocar el token viejo
+			await RefreshTokenModel.updateOne({ _id: storedToken._id }, { revoked: true });
+
+			// Generar nuevo par de tokens
+			const newAccess = generateToken({ id: dbUser._id, email: dbUser.email, address: dbUser.address });
+			const newRefreshTokenValue = crypto.randomBytes(40).toString('hex');
+			const newRefreshTokenExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+			await RefreshTokenModel.create({
+				userId: dbUser._id,
+				token: newRefreshTokenValue,
+				expiresAt: newRefreshTokenExpiry,
+				revoked: false,
+			});
+
+			res.cookie('token', newAccess, {
+				httpOnly: true,
+				secure: env.nodeEnv === 'production',
+				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+				maxAge: 1000 * 60 * 30,
+			});
+			res.cookie('refreshToken', newRefreshTokenValue, {
+				httpOnly: true,
+				secure: env.nodeEnv === 'production',
+				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+				maxAge: 1000 * 60 * 60 * 24 * 30,
+			});
+
+			return res.status(200).json({ ok: true });
+		} catch (_e) {
+			return res.status(403).json({ message: 'Invalid or expired refresh token' });
 		}
 	},
 

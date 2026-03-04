@@ -43,7 +43,7 @@ describe('Dashboard period filter', () => {
 		// Pedido pagado en Enero 2026
 		await OrderModel.create({
 			user: user!._id,
-			status: 'entregado',
+			status: 'Completado',
 			startedAt: new Date('2026-01-15T10:00:00.000Z'),
 			items: [{ tipo: 'producto', id_producto: product._id, cantidad: 1, valor: 100 }],
 			payments: [

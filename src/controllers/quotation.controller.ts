@@ -1,4 +1,4 @@
-// controllers/quotation.controller.ts
+			// controllers/quotation.controller.ts
 import { Response } from 'express';
 import { Types } from 'mongoose';
 import { QuotationModel } from '../models/quotation.model';
@@ -345,53 +345,62 @@ export const quotationController = {
 
 			await quotation.save();
 
-			const to = env.adminNotifyEmail || env.mailFrom;
-			if (to) {
-				const linkBase = env.frontendOrigins[0] || 'http://localhost:3000';
-				const userName = (quotation.user as any)?.name || 'Cliente';
-				const userEmail = (quotation.user as any)?.email || '';
+			// Send response to frontend ASAP
+			res.json({ ok: true, deleted: true, quotationId: String(quotation._id) });
 
-				const html = await templateService.render('user-decision', {
-					HEADER_COLOR: isAccepted ? '#16a34a' : '#dc2626',
-					DECISION_ICON: isAccepted ? '✅' : '❌',
-					DECISION_TITLE: isAccepted ? 'Cotización Aceptada' : 'Cotización Rechazada',
-					DECISION_COLOR: isAccepted ? '#16a34a' : '#dc2626',
-					DECISION_TEXT: isAccepted ? 'aceptado' : 'rechazado',
-					DECISION_LABEL: isAccepted ? 'Aceptada' : 'Rechazada',
-					BADGE_BG: isAccepted ? '#dcfce7' : '#fee2e2',
-					BADGE_COLOR: isAccepted ? '#15803d' : '#b91c1c',
-					NEW_STATUS: isAccepted ? 'En proceso' : 'Cerrada',
-					CONDITIONAL_MESSAGE: isAccepted
-						? 'Se ha creado un pedido a partir de esta cotización. El equipo se pondrá en contacto próximamente para coordinar los detalles.'
-						: 'El cliente ha decidido no proceder con esta cotización. Puedes contactarlo si deseas conocer el motivo.',
-					USER_NAME: userName,
-					USER_EMAIL: userEmail,
-					QUOTATION_ID: String(quotation._id).slice(-8).toUpperCase(),
-					DECISION_DATE: new Date().toLocaleDateString('es-ES', {
-						day: 'numeric',
-						month: 'long',
-						year: 'numeric',
-					}),
-					YEAR: new Date().getFullYear(),
-				});
+			// Background tasks: email and cleanup
+			(async () => {
+				try {
+					const to = env.adminNotifyEmail || env.mailFrom;
+					if (to) {
+						const userName = (quotation.user as any)?.name || 'Cliente';
+						const userEmail = (quotation.user as any)?.email || '';
 
-				await sendEmail({
-					to,
-					subject: `Decisión del cliente: ${isAccepted ? 'ACEPTÓ' : 'RECHAZÓ'} la cotización`,
-					html,
-				});
-			}
+						const html = await templateService.render('user-decision', {
+							HEADER_COLOR: isAccepted ? '#16a34a' : '#dc2626',
+							DECISION_ICON: isAccepted ? '✅' : '❌',
+							DECISION_TITLE: isAccepted ? 'Cotización Aceptada' : 'Cotización Rechazada',
+							DECISION_COLOR: isAccepted ? '#16a34a' : '#dc2626',
+							DECISION_TEXT: isAccepted ? 'aceptado' : 'rechazado',
+							DECISION_LABEL: isAccepted ? 'Aceptada' : 'Rechazada',
+							BADGE_BG: isAccepted ? '#dcfce7' : '#fee2e2',
+							BADGE_COLOR: isAccepted ? '#15803d' : '#b91c1c',
+							NEW_STATUS: isAccepted ? 'En proceso' : 'Cerrada',
+							CONDITIONAL_MESSAGE: isAccepted
+								? 'Se ha creado un pedido a partir de esta cotización. El equipo se pondrá en contacto próximamente para coordinar los detalles.'
+								: 'El cliente ha decidido no proceder con esta cotización. Puedes contactarlo si deseas conocer el motivo.',
+							USER_NAME: userName,
+							USER_EMAIL: userEmail,
+							QUOTATION_ID: String(quotation._id).slice(-8).toUpperCase(),
+							DECISION_DATE: new Date().toLocaleDateString('es-ES', {
+								day: 'numeric',
+								month: 'long',
+								year: 'numeric',
+							}),
+							YEAR: new Date().getFullYear(),
+						});
 
-			try {
-				const { ChatMessageModel } = await import('../models/chatMessage.model');
-				await ChatMessageModel.deleteMany({ quotation: quotation._id });
-			} catch (_e) {
-				// no-op
-			}
+						await sendEmail({
+							to,
+							subject: `Decisión del cliente: ${isAccepted ? 'ACEPTÓ' : 'RECHAZÓ'} la cotización`,
+							html,
+						});
+					}
 
-			await QuotationModel.deleteOne({ _id: quotation._id });
+					try {
+						const { ChatMessageModel } = await import('../models/chatMessage.model');
+						await ChatMessageModel.deleteMany({ quotation: quotation._id });
+					} catch (_e) {
+						// no-op
+					}
 
-			return res.json({ ok: true, deleted: true, quotationId: String(quotation._id) });
+					await QuotationModel.deleteOne({ _id: quotation._id });
+				} catch (bgErr) {
+					console.error('BACKGROUND WORK ERROR (userDecision) 👉', bgErr);
+				}
+			})();
+
+			return;
 		} catch (err) {
 			console.error('USER DECISION ERROR 👉', err);
 			return res.status(500).json({ error: 'Error applying decision' });

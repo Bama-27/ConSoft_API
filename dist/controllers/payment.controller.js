@@ -3,28 +3,44 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentController = void 0;
 const order_model_1 = require("../models/order.model");
 const crud_controller_1 = require("./crud.controller");
+const ocr_1 = require("../utils/ocr");
 const base = (0, crud_controller_1.createCrudController)(order_model_1.OrderModel);
 exports.PaymentController = {
     ...base,
+    calculateOrderTotals: (order) => {
+        const total = (order?.items ?? []).reduce((sum, item) => sum + (item?.valor || 0), 0);
+        const APPROVED = new Set(['aprobado', 'confirmado']);
+        const paid = (order?.payments ?? []).reduce((sum, p) => {
+            const status = String(p?.status || '').toLowerCase();
+            return APPROVED.has(status) ? sum + (p?.amount || 0) : sum;
+        }, 0);
+        // 🔥 Agregar información del abono inicial
+        const initialPayment = order?.initialPayment?.amount || 0;
+        const necesitaAbono = initialPayment < total * 0.3;
+        const porcentajeAbono = total > 0 ? (initialPayment / total) * 100 : 0;
+        return {
+            total,
+            paid,
+            restante: total - paid,
+            necesitaAbono,
+            porcentajeAbono,
+        };
+    },
     list: async (req, res) => {
         try {
             const orders = await order_model_1.OrderModel.find();
             const payments = orders.map((order) => {
-                // total de los items
-                const total = order.items.reduce((sum, item) => sum + (item.valor || 0), 0);
-                // pagado acumulado solo de pagos aprobados
+                const { total, paid, restante, necesitaAbono, porcentajeAbono } = exports.PaymentController.calculateOrderTotals(order);
                 let acumulado = 0;
                 const APPROVED = new Set(['aprobado', 'confirmado']);
-                // transformar cada pago agregando su restante en ese momento
                 const pagosConRestante = order.payments.map((p) => {
-                    // solo sumamos si el pago está aprobado
                     const status = String(p.status || '').toLowerCase();
                     if (APPROVED.has(status)) {
                         acumulado += p.amount || 0;
                     }
                     return {
-                        ...p.toObject(), // asegurarse que sea objeto plano
-                        restante: total - acumulado, // pendiente hasta ese pago
+                        ...p.toObject(),
+                        restante: total - acumulado,
                     };
                 });
                 return {
@@ -32,6 +48,8 @@ exports.PaymentController = {
                     total,
                     paid: acumulado,
                     restante: total - acumulado,
+                    necesitaAbono,
+                    porcentajeAbono,
                     payments: pagosConRestante,
                 };
             });
@@ -48,10 +66,14 @@ exports.PaymentController = {
             const order = await order_model_1.OrderModel.findById(orderId);
             if (!order)
                 return res.status(404).json({ message: 'Order not found' });
-            const total = order.items.reduce((sum, item) => sum + (item.valor || 0), 0);
+            const { total, paid, restante, necesitaAbono, porcentajeAbono } = exports.PaymentController.calculateOrderTotals(order);
             let acumulado = 0;
+            const APPROVED = new Set(['aprobado', 'confirmado']);
             const pagosConRestante = order.payments.map((p) => {
-                acumulado += p.amount || 0;
+                const status = String(p.status || '').toLowerCase();
+                if (APPROVED.has(status)) {
+                    acumulado += p.amount || 0;
+                }
                 return {
                     ...p.toObject(),
                     restante: total - acumulado,
@@ -62,6 +84,8 @@ exports.PaymentController = {
                 total,
                 paid: acumulado,
                 restante: total - acumulado,
+                necesitaAbono,
+                porcentajeAbono,
                 payments: pagosConRestante,
             });
         }
@@ -85,6 +109,91 @@ exports.PaymentController = {
             await order.save();
             const payment = order.payments[order.payments.length - 1];
             return res.status(201).json(payment);
+        }
+        catch (error) {
+            console.error(error);
+            return res.status(500).json({ message: 'Internal server error' });
+        }
+    },
+    // Preview de pago a partir de imagen con OCR (NO crea pago)
+    createFromReceiptOcr: async (req, res) => {
+        try {
+            console.log('req.file:', req.file);
+            const orderId = req.params.id || req.body.orderId;
+            const file = req.file;
+            if (!orderId)
+                return res.status(400).json({ message: 'orderId is required (path or body)' });
+            if (!file?.path)
+                return res.status(400).json({ message: 'payment_image file is required' });
+            const order = await order_model_1.OrderModel.findById(orderId);
+            if (!order)
+                return res.status(404).json({ message: 'Order not found' });
+            const totals = exports.PaymentController.calculateOrderTotals(order);
+            // Extraer texto y parsear monto
+            const text = await (0, ocr_1.extractTextFromImage)(file.path);
+            console.log('OCR text:', text);
+            const parsedAmount = (0, ocr_1.parseAmountFromText)(text || '');
+            console.log('Parsed amount:', parsedAmount);
+            if (parsedAmount == null) {
+                return res.status(422).json({
+                    message: 'No se pudo detectar un monto válido en el comprobante',
+                    ocrText: text,
+                });
+            }
+            const projectedRestante = totals.restante - parsedAmount;
+            return res.status(200).json({
+                ok: true,
+                orderId: String(order._id),
+                current: {
+                    total: totals.total,
+                    paid: totals.paid,
+                    restante: totals.restante,
+                },
+                detectedAmount: parsedAmount,
+                projected: {
+                    amountToPay: parsedAmount,
+                    restanteAfter: projectedRestante,
+                },
+                receipt: {
+                    receiptUrl: file.path,
+                    ocrText: text,
+                },
+            });
+        }
+        catch (error) {
+            console.error(error);
+            return res.status(500).json({ message: 'Internal server error' });
+        }
+    },
+    // Enviar solicitud de aprobación (crea pago en estado pendiente)
+    submitReceiptOcr: async (req, res) => {
+        try {
+            const orderId = req.params.id || req.body.orderId;
+            const { amount, paidAt, method, receiptUrl, ocrText } = req.body ?? {};
+            if (!orderId)
+                return res.status(400).json({ message: 'orderId is required' });
+            const parsedAmount = Number(amount);
+            if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+                return res.status(400).json({ message: 'amount must be a positive number' });
+            }
+            const order = await order_model_1.OrderModel.findById(orderId);
+            if (!order)
+                return res.status(404).json({ message: 'Order not found' });
+            // Agregar el pago
+            order.payments.push({
+                amount: parsedAmount,
+                paidAt: paidAt ? new Date(paidAt) : new Date(),
+                method: String(method ?? 'comprobante'),
+                status: 'pendiente', // Pendiente de aprobación
+                receiptUrl: receiptUrl ? String(receiptUrl) : undefined,
+                ocrText: ocrText ? String(ocrText) : undefined,
+            });
+            // Guardar antes de actualizar estado
+            await order.save();
+            // 🔥 Actualizar estado basado en los pagos aprobados (solo aprobados)
+            // Nota: este nuevo pago está pendiente, no afecta aún
+            const payment = order.payments[order.payments.length - 1];
+            return res.status(201).json({ ok: true, payment });
         }
         catch (error) {
             console.error(error);

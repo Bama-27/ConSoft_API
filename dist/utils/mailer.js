@@ -11,7 +11,8 @@ catch (_e) {
     nodemailer = null;
 }
 function isConfigured() {
-    return !!(env_1.env.mailSmtpHost && env_1.env.mailSmtpPort && env_1.env.mailSmtpUser && env_1.env.mailSmtpPass && nodemailer);
+    // Considerar configurado si hay host, user y pass; el puerto puede asumir por defecto 587
+    return !!(env_1.env.mailSmtpHost && env_1.env.mailSmtpUser && env_1.env.mailSmtpPass && nodemailer);
 }
 async function sendEmail(options) {
     if (!isConfigured()) {
@@ -20,20 +21,28 @@ async function sendEmail(options) {
         console.log('[sendEmail noop]', options.subject, '→', options.to);
         return;
     }
+    const port = env_1.env.mailSmtpPort ?? 587;
+    const secure = port === 465;
     const transporter = nodemailer.createTransport({
         host: env_1.env.mailSmtpHost,
-        port: env_1.env.mailSmtpPort,
-        secure: env_1.env.mailSmtpPort === 465,
+        port,
+        secure,
         auth: {
             user: env_1.env.mailSmtpUser,
             pass: env_1.env.mailSmtpPass,
         },
     });
-    await transporter.sendMail({
-        from: env_1.env.mailFrom,
-        to: options.to,
-        subject: options.subject,
-        text: options.text,
-        html: options.html,
-    });
+    try {
+        await transporter.sendMail({
+            from: env_1.env.mailFrom,
+            to: options.to,
+            subject: options.subject,
+            text: options.text,
+            html: options.html,
+        });
+    }
+    catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[sendEmail error]', err?.message || err);
+    }
 }
