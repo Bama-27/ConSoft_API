@@ -1,4 +1,4 @@
-			// controllers/quotation.controller.ts
+// controllers/quotation.controller.ts
 import { Response } from 'express';
 import { Types } from 'mongoose';
 import { QuotationModel } from '../models/quotation.model';
@@ -325,18 +325,52 @@ export const quotationController = {
 					startedAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) },
 				});
 
+				const { items: incomingItems } = req.body ?? {};
+
 				if (!existingOrder) {
-					const items = (quotation.items ?? []).map((item) => ({
-						detalles: item.adminNotes ?? 'Sin notas del administrador',
-						valor: (item.price ?? 0) * item.quantity,
-						id_servicio: '6999d686f21e5a62a1823865',
-					}));
+
+					const orderItems = (Array.isArray(incomingItems) && incomingItems.length > 0)
+						? incomingItems.map((item: any) => {
+							const generated = {
+								tipo: item.id_producto ? 'producto' : 'servicio',
+								id_producto: item.id_producto || null,
+								id_servicio: '6999d686f21e5a62a1823865',
+								detalles: item.detalles || 'Sin notas adicionales',
+								valor: Number(item.valor) || 0,
+								cantidad: Number(item.cantidad) || 1,
+							};
+							console.log('Mapped from incoming item:', item, '=>', generated);
+							return generated;
+						})
+						: (quotation.items ?? []).map((item) => {
+							const isProduct = !!item.product;
+							const isCustom = item.isCustom;
+
+							let detallesStr = item.adminNotes || 'Sin notas adicionales';
+							if (isCustom && item.customDetails) {
+								const { name, description, woodType } = item.customDetails;
+								detallesStr = `[Personalizado] ${name || 'Sin nombre'}. ${description || ''} ${woodType ? ` (Madera: ${woodType})` : ''}. Notas: ${detallesStr}`;
+							}
+
+							const generated = {
+								tipo: isProduct ? 'producto' : 'servicio',
+								id_producto: isProduct ? item.product : null,
+								id_servicio: '6999d686f21e5a62a1823865',
+								detalles: detallesStr,
+								valor: (item.price ?? 0) * item.quantity,
+								cantidad: item.quantity,
+							};
+							console.log('Mapped from DB item:', item, '=>', generated);
+							return generated;
+						});
+
+					console.log('--- USER_DECISION FINAL ORDER ITEMS ---', JSON.stringify(orderItems, null, 2));
 
 					await OrderModel.create({
 						user: quotation.user as any,
 						status: 'Pendiente',
 						startedAt: new Date(),
-						items,
+						items: orderItems,
 					} as any);
 				}
 			} else {
