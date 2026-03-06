@@ -508,10 +508,16 @@ export const OrderController = {
 				let nombre = 'Pedido';
 				const firstItem = order.items?.[0];
 				if (firstItem) {
-					if (firstItem.id_servicio && typeof firstItem.id_servicio === 'object' && (firstItem.id_servicio as any).name) {
-						nombre = (firstItem.id_servicio as any).name;
-					} else if (firstItem.id_producto && typeof firstItem.id_producto === 'object' && (firstItem.id_producto as any).name) {
+					const isAdminFabricator = firstItem.id_servicio && String((firstItem.id_servicio as any)?._id || firstItem.id_servicio) === '6999d686f21e5a62a1823865';
+
+					if (firstItem.id_producto && typeof firstItem.id_producto === 'object' && (firstItem.id_producto as any).name) {
 						nombre = (firstItem.id_producto as any).name;
+					} else if (firstItem.id_servicio && typeof firstItem.id_servicio === 'object' && (firstItem.id_servicio as any).name && !isAdminFabricator) {
+						nombre = (firstItem.id_servicio as any).name;
+					} else if (firstItem.detalles) {
+						// Si es el servicio de fabricación genérico o no hay ID, usar detalles
+						const cleanDetalles = firstItem.detalles.replace('[Personalizado] ', '');
+						nombre = cleanDetalles.length > 30 ? cleanDetalles.substring(0, 30) + '...' : cleanDetalles;
 					}
 				}
 
