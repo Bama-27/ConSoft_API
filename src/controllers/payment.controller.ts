@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { OrderModel } from '../models/order.model';
 import { createCrudController } from './crud.controller';
-import { extractTextFromImage, parseAmountFromText } from '../utils/ocr';
+import { extractTextFromImage, parseAmountFromText, parseReferenceFromText } from '../utils/ocr';
 
 const base = createCrudController(OrderModel);
 
@@ -19,7 +19,8 @@ export const PaymentController = {
 		let paidPending = 0;
 
 		// Ordenar pagos por fecha
-		const sortedPayments = [...(order?.payments ?? [])].sort((a, b) =>
+		const payments = Array.isArray(order?.payments) ? order.payments : [];
+		const sortedPayments = [...payments].sort((a, b) =>
 			new Date(a.paidAt).getTime() - new Date(b.paidAt).getTime()
 		);
 
@@ -65,20 +66,87 @@ export const PaymentController = {
 
 	list: async (req: Request, res: Response) => {
 		try {
-			const orders = await OrderModel.find();
+			const page = Math.max(1, Number(req.query.page) || 1);
+			const limit = Math.max(1, Number(req.query.limit) || 20);
+			const skip = (page - 1) * limit;
 
-			const payments = orders.map((order) => {
+			const matchFilter: any = {};
+			if (req.query.search) {
+				const regex = new RegExp(String(req.query.search), 'i');
+				const userMatches = await import('../models/user.model').then(m => m.UserModel.find({ name: regex }).select('_id'));
+				const userIds = userMatches.map(u => u._id);
+				matchFilter.user = { $in: userIds };
+			}
+
+			// Agregación para desglosar pagos y paginar sobre ellos
+			const aggregation = [
+				{ $match: matchFilter },
+				// Poblar usuario antes de proyectar
+				{
+					$lookup: {
+						from: 'usuarios', // Nombre de la colección de usuarios
+						localField: 'user',
+						foreignField: '_id',
+						as: 'user'
+					}
+				},
+				{ $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+				// Clonar el documento para mantener el array original
+				{
+					$project: {
+						doc: "$$ROOT",
+						payment: "$payments"
+					}
+				},
+				{ $unwind: "$payment" },
+				{ $sort: { "payment.paidAt": -1 as any } },
+				{
+					$facet: {
+						metadata: [{ $count: "total" }],
+						data: [
+							{ $skip: skip },
+							{ $limit: limit },
+							{
+								$project: {
+									_id: 0,
+									order: "$doc",
+									payment: "$payment"
+								}
+							}
+						]
+					}
+				}
+			];
+
+			const [result] = await OrderModel.aggregate(aggregation);
+			const totalPayments = result.metadata[0]?.total || 0;
+
+			const payments = result.data.map((item: any) => {
+				const order = item.order;
 				const totals = PaymentController.calculateOrderTotals(order);
+				
 				return {
-					...totals,
-					_id: order._id,
-					paid: totals.paidApproved,
+					payment: item.payment,
+					summary: {
+						...totals,
+						_id: order._id,
+						user: order.user
+					}
 				};
 			});
 
-			res.status(200).json({ ok: true, payments });
+			res.status(200).json({
+				ok: true,
+				payments,
+				pagination: {
+					page,
+					limit,
+					total: totalPayments,
+					pages: Math.ceil(totalPayments / limit),
+				},
+			});
 		} catch (error) {
-			console.error(error);
+			console.error("Error in PaymentController.list:", error);
 			res.status(500).json({ message: 'Internal server error' });
 		}
 	},
@@ -104,7 +172,7 @@ export const PaymentController = {
 
 	create: async (req: Request, res: Response) => {
 		try {
-			const { orderId, amount, paidAt, method, status } = req.body;
+			const { orderId, amount, paidAt, method, status, reference } = req.body;
 			if (!orderId || amount == null || !paidAt || !method || !status) {
 				return res
 					.status(400)
@@ -114,7 +182,7 @@ export const PaymentController = {
 			const order = await OrderModel.findById(orderId);
 			if (!order) return res.status(404).json({ message: 'Order not found' });
 
-			order.payments.push({ amount, paidAt, method, status } as any);
+			order.payments.push({ amount, paidAt, method, status, reference } as any);
 			await order.save();
 
 			const payment = order.payments[order.payments.length - 1];
@@ -144,7 +212,10 @@ export const PaymentController = {
 			const text = await extractTextFromImage(file.path);
 			console.log('OCR text:', text);
 			const parsedAmount = parseAmountFromText(text || '');
+			const parsedReference = parseReferenceFromText(text || '');
 			console.log('Parsed amount:', parsedAmount);
+			console.log('Parsed reference:', parsedReference);
+
 			if (parsedAmount == null) {
 				return res.status(422).json({
 					message: 'No se pudo detectar un monto válido en el comprobante',
@@ -162,6 +233,7 @@ export const PaymentController = {
 					restante: totals.restante,
 				},
 				detectedAmount: parsedAmount,
+				detectedReference: parsedReference,
 				projected: {
 					amountToPay: parsedAmount,
 					restanteAfter: projectedRestante,
@@ -181,7 +253,7 @@ export const PaymentController = {
 	submitReceiptOcr: async (req: Request, res: Response) => {
 		try {
 			const orderId = req.params.id || req.body.orderId;
-			const { amount, paidAt, method, receiptUrl, ocrText } = req.body ?? {};
+			const { amount, paidAt, method, receiptUrl, ocrText, reference } = req.body ?? {};
 
 			if (!orderId) return res.status(400).json({ message: 'orderId is required' });
 
@@ -200,6 +272,7 @@ export const PaymentController = {
 				method: String(method ?? 'comprobante'),
 				status: 'pendiente', // Pendiente de aprobación
 				receiptUrl: receiptUrl ? String(receiptUrl) : undefined,
+				reference: reference ? String(reference) : undefined,
 				ocrText: ocrText ? String(ocrText) : undefined,
 			} as any);
 
@@ -219,7 +292,7 @@ export const PaymentController = {
 	update: async (req: Request, res: Response) => {
 		try {
 			const orderId = req.params.id;
-			const { paymentId, amount, paidAt, method, status } = req.body;
+			const { paymentId, amount, paidAt, method, status, reference } = req.body;
 			if (!paymentId) return res.status(400).json({ message: 'paymentId is required' });
 
 			const update: any = {};
@@ -227,6 +300,7 @@ export const PaymentController = {
 			if (paidAt != null) update['payments.$.paidAt'] = paidAt;
 			if (method != null) update['payments.$.method'] = method;
 			if (status != null) update['payments.$.status'] = status;
+			if (reference != null) update['payments.$.reference'] = reference;
 
 			const updated = await OrderModel.findOneAndUpdate(
 				{ _id: orderId, 'payments._id': paymentId },

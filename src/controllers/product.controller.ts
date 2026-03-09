@@ -8,12 +8,53 @@ export const ProductController = {
 	...base,
 	list: async (req: Request, res: Response) => {
 		try {
-			const products = await ProductModel.find().populate('category');
-			if (!products) {
-				return res.status(404).json({ ok: false, message: 'No products found' });
+			const page = Math.max(1, Number(req.query.page) || 1);
+			const limit = Math.max(1, Number(req.query.limit) || 20);
+			const skip = (page - 1) * limit;
+
+			const filter: any = {};
+			if (req.query.search) {
+				const regex = new RegExp(String(req.query.search), 'i');
+				filter.$or = [
+					{ name: regex },
+					{ description: regex }
+				];
 			}
 
-			res.status(200).json({ ok: true, products });
+			if (req.query.category) {
+				// Si mandan un ID de categoría o el nombre
+				const categoryQuery = String(req.query.category);
+				const categoryMatch = await import('../models/category.model').then(m => m.CategoryModel.findOne({ 
+					$or: [
+						{ _id: categoryQuery.match(/^[0-9a-fA-F]{24}$/) ? categoryQuery : null },
+						{ name: new RegExp(`^${categoryQuery}$`, 'i') }
+					]
+				}).select('_id'));
+				
+				if (categoryMatch) {
+					filter.category = categoryMatch._id;
+				}
+			}
+
+			const [products, total] = await Promise.all([
+				ProductModel.find(filter)
+					.populate('category')
+					.skip(skip)
+					.limit(limit)
+					.exec(),
+				ProductModel.countDocuments(filter),
+			]);
+
+			res.status(200).json({
+				ok: true,
+				products,
+				pagination: {
+					page,
+					limit,
+					total,
+					pages: Math.ceil(total / limit),
+				},
+			});
 		} catch (error) {
 			console.error(error);
 			res.status(500).json({ message: 'Internal server error' });

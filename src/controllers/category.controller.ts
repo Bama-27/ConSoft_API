@@ -9,12 +9,35 @@ export const CategoryControlleer = {
 
 	list: async (req: Request, res: Response) => {
 		try {
-			const categories = await CategoryModel.find().populate('products');
-			if (!categories) {
-				return res.status(404).json({ ok: false, message: 'No categories found' });
+			const page = Math.max(1, Number(req.query.page) || 1);
+			const limit = Math.max(1, Number(req.query.limit) || 20);
+			const skip = (page - 1) * limit;
+
+			const filter: any = {};
+			if (req.query.search) {
+				const regex = new RegExp(String(req.query.search), 'i');
+				filter.name = regex;
 			}
 
-			res.status(200).json({ ok: true, categories });
+			const [categories, total] = await Promise.all([
+				CategoryModel.find(filter)
+					.populate('products')
+					.skip(skip)
+					.limit(limit)
+					.exec(),
+				CategoryModel.countDocuments(filter),
+			]);
+
+			res.status(200).json({
+				ok: true,
+				categories,
+				pagination: {
+					page,
+					limit,
+					total,
+					pages: Math.ceil(total / limit),
+				},
+			});
 		} catch (error) {
 			console.log(error)
 			res.status(500).json({ message: 'Internal server error' });

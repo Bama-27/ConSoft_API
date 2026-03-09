@@ -443,10 +443,26 @@ export const quotationController = {
 
 	listAll: async (req: AuthRequest, res: Response) => {
 		try {
-			const { status, page = 1, limit = 20 } = req.query;
+			const { status, page = 1, limit = 20, search } = req.query;
 
 			const filter: any = {};
 			if (status) filter.status = status;
+			
+			if (search) {
+				const searchStr = String(search);
+				const userMatches = await import('../models/user.model').then(m => m.UserModel.find({ name: new RegExp(searchStr, 'i') }).select('_id'));
+				const userIds = userMatches.map(u => u._id);
+
+				const orConditions: any[] = [
+					{ user: { $in: userIds } }
+				];
+
+				if (Types.ObjectId.isValid(searchStr)) {
+					orConditions.push({ _id: searchStr });
+				}
+
+				filter.$or = orConditions;
+			}
 
 			const quotations = await QuotationModel.find(filter)
 				.sort({ createdAt: -1 })

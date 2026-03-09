@@ -8,10 +8,38 @@ const base = createCrudController(RoleModel);
 export const RoleController = {
 	...base,
 
-	list: async (_req: Request, res: Response) => {
+	list: async (req: Request, res: Response) => {
 		try {
-			const roles = await RoleModel.find().populate('usersCount').populate('permissions');
-			return res.status(200).json({ ok: true, roles });
+			const page = Math.max(1, Number(req.query.page) || 1);
+			const limit = Math.max(1, Number(req.query.limit) || 20);
+			const skip = (page - 1) * limit;
+
+			const filter: any = {};
+			if (req.query.search) {
+				const regex = new RegExp(String(req.query.search), 'i');
+				filter.name = regex;
+			}
+
+			const [roles, total] = await Promise.all([
+				RoleModel.find(filter)
+					.populate('usersCount')
+					.populate('permissions')
+					.skip(skip)
+					.limit(limit)
+					.exec(),
+				RoleModel.countDocuments(filter),
+			]);
+
+			return res.status(200).json({
+				ok: true,
+				roles,
+				pagination: {
+					page,
+					limit,
+					total,
+					pages: Math.ceil(total / limit),
+				},
+			});
 		} catch (error) {
 			console.error(error);
 			return res.status(500).json({ error: 'Internal server error' });

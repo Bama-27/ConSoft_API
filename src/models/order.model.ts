@@ -8,6 +8,7 @@ const PaymentSchema = new Schema(
     method: { type: String, required: true, trim: true },
     status: { type: String, required: true, trim: true },
     receiptUrl: { type: String, trim: true },
+    reference: { type: String, trim: true },
     ocrText: { type: String, trim: true },
   },
 );
