@@ -79,4 +79,27 @@ export function parseAmountFromText(text: string): number | null {
 	return best;
 }
 
+export function parseReferenceFromText(text: string): string | null {
+	if (!text) return null;
+
+	const normalized = text.replace(/\s+/g, ' ');
+
+	// Patrones comunes en Colombia (Bancolombia, Nequi, Daviplata)
+	const patterns = [
+		/Comprobante No\.?\s*(\d+)/i,
+		/Referencia\s*([A-Z0-9]{4,})/i,
+		/Ref\.\s*([A-Z0-9]{4,})/i,
+		/Código\s*(?:de)?\s*(?:aprobación|referencia)?\s*([A-Z0-9]{4,})/i,
+		/CUS\s*(\d+)/i, // Daviplata CUS
+	];
+
+	for (const pattern of patterns) {
+		const match = normalized.match(pattern);
+		if (match && match[1]) return match[1];
+	}
+
+	return null;
+}
+
+
 

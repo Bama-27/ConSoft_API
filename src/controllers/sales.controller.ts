@@ -7,24 +7,93 @@ const base = createCrudController(OrderModel);
 export const SaleController = {
 	...base,
 	list: async (req: Request, res: Response) => {
-		const orders = await OrderModel.find().populate("user", "name")
+		try {
+			const page = Math.max(1, Number(req.query.page) || 1);
+			const limit = Math.max(1, Number(req.query.limit) || 20);
+			const skip = (page - 1) * limit;
 
-		const sales = orders
-			.map((order) => {
-				const total = order.items.reduce((sum, item) => sum + (item.valor || 0), 0);
-				const paid = order.payments.reduce((sum, p) => sum + (p.amount || 0), 0);
-				const restante = total - paid;
+			const filter: any = {};
+			if (req.query.search) {
+				const regex = new RegExp(String(req.query.search), 'i');
+				const userMatches = await import('../models/user.model').then(m => m.UserModel.find({ name: regex }).select('_id'));
+				const userIds = userMatches.map(u => u._id);
+				filter.user = { $in: userIds };
+			}
 
+			// NOTA: Para filtrar por 'ventas' (restante == 0), necesitamos agregación 
+			// o traer una cantidad mayor y filtrar. Dado que el usuario pidió endpoints paginados,
+			// usaré una agregación simple para que sea eficiente.
+			
+			const aggregate = OrderModel.aggregate([
+				{ $match: filter },
+				{
+					$addFields: {
+						totalAmount: { $sum: "$items.valor" },
+						totalPaid: { $sum: "$payments.amount" },
+						// Sumar pago inicial si existe
+						initialAmount: { $ifNull: ["$initialPayment.amount", 0] }
+					}
+				},
+				{
+					$addFields: {
+						totalPaidSum: { $add: ["$totalPaid", "$initialAmount"] }
+					}
+				},
+				{
+					$match: {
+						$expr: { $gte: ["$totalPaidSum", "$totalAmount"] },
+						totalAmount: { $gt: 0 } // Solo órdenes con items
+					}
+				}
+			]);
+
+			const [result, totalCountResult] = await Promise.all([
+				OrderModel.aggregate([
+					...aggregate.pipeline(),
+					{ $sort: { createdAt: -1 } },
+					{ $skip: skip },
+					{ $limit: limit },
+					{
+						$lookup: {
+							from: 'users',
+							localField: 'user',
+							foreignField: '_id',
+							as: 'user'
+						}
+					},
+					{ $unwind: "$user" },
+					{ $project: { "user.password": 0, "user.__v": 0 } }
+				]),
+				OrderModel.aggregate([
+					...aggregate.pipeline(),
+					{ $count: "total" }
+				])
+			]);
+
+			const total = totalCountResult[0]?.total || 0;
+			const sales = result.map(order => {
 				return {
 					order,
-					total,
-					paid,
-					restante,
-					user: order.user, // si tienes referencia al cliente
+					total: order.totalAmount,
+					paid: order.totalPaidSum,
+					restante: order.totalAmount - order.totalPaidSum,
+					user: order.user
 				};
-			})
-			.filter((order) => order.restante <= 0);
+			});
 
-		return res.status(200).json({ ok: true, sales });
+			return res.status(200).json({
+				ok: true,
+				sales,
+				pagination: {
+					page,
+					limit,
+					total,
+					pages: Math.ceil(total / limit),
+				},
+			});
+		} catch (error) {
+			console.error('Error listing sales:', error);
+			res.status(500).json({ error: 'Internal server error' });
+		}
 	},
 };

@@ -50,8 +50,47 @@ export const VisitController = {
 	...base,
 
 	list: async (req: Request, res: Response) => {
-		const visits = await VisitModel.find().populate('user', 'name email'); // ✔ user es un ObjectId
-		return res.json({ ok: true, visits });
+		try {
+			const page = Math.max(1, Number(req.query.page) || 1);
+			const limit = Math.max(1, Number(req.query.limit) || 20);
+			const skip = (page - 1) * limit;
+
+			const filter: any = {};
+			if (req.query.search) {
+				const regex = new RegExp(String(req.query.search), 'i');
+				const userMatches = await import('../models/user.model').then(m => m.UserModel.find({ name: regex }).select('_id'));
+				const userIds = userMatches.map(u => u._id);
+				
+				filter.$or = [
+					{ user: { $in: userIds } },
+					{ 'guestInfo.name': regex }
+				];
+			}
+
+			const [visits, total] = await Promise.all([
+				VisitModel.find(filter)
+					.populate('user', 'name email')
+					.sort({ visitDate: -1 })
+					.skip(skip)
+					.limit(limit)
+					.lean(),
+				VisitModel.countDocuments(filter)
+			]);
+
+			return res.json({
+				ok: true,
+				visits,
+				pagination: {
+					page,
+					limit,
+					total,
+					pages: Math.ceil(total / limit)
+				}
+			});
+		} catch (error) {
+			console.error('Error listing visits:', error);
+			res.status(500).json({ error: 'Internal server error' });
+		}
 	},
 
 	get: async (req: Request, res: Response) => {

@@ -455,31 +455,58 @@ export const OrderController = {
 		}
 	},
 
-	// ✅ MÉTODO EXISTENTE ACTUALIZADO: Listar pedidos (admin)
 	list: async (req: Request, res: Response) => {
 		try {
-			const orders = await OrderModel.find()
-				.sort({ createdAt: -1 })
-				.populate('user', '-password -__v ')
-				.populate('items.id_servicio')
-				.populate('items.id_producto')
-				.lean();
+			const page = Math.max(1, Number(req.query.page) || 1);
+			const limit = Math.max(1, Number(req.query.limit) || 20);
+			const skip = (page - 1) * limit;
 
-			const result = orders
-				.map((order) => {
-					const totals = calculateOrderTotals(order);
-					const necesitaAbono = totals.paid < totals.total * 0.3;
+			const filter: any = {
+				status: { $ne: 'Pagado' }
+			};
 
-					return {
-						...order,
-						...totals,
-						necesitaAbono,
-						paymentStatus: totals.restante <= 0 ? 'Pagado' : 'Pendiente',
-					};
-				})
-				.filter((order) => order.paymentStatus != 'Pagado');
+			if (req.query.search) {
+				const regex = new RegExp(String(req.query.search), 'i');
+				// Buscar por nombre del usuario
+				const userMatches = await import('../models/user.model').then(m => m.UserModel.find({ name: regex }).select('_id'));
+				const userIds = userMatches.map(u => u._id);
+				filter.user = { $in: userIds };
+			}
 
-			res.json(result);
+			const [orders, total] = await Promise.all([
+				OrderModel.find(filter)
+					.sort({ createdAt: -1 })
+					.populate('user', '-password -__v ')
+					.populate('items.id_servicio')
+					.populate('items.id_producto')
+					.skip(skip)
+					.limit(limit)
+					.lean(),
+				OrderModel.countDocuments(filter)
+			]);
+
+			const result = orders.map((order) => {
+				const totals = calculateOrderTotals(order);
+				const necesitaAbono = totals.paid < totals.total * 0.3;
+
+				return {
+					...order,
+					...totals,
+					necesitaAbono,
+					paymentStatus: totals.restante <= 0 ? 'Pagado' : 'Pendiente',
+				};
+			});
+
+			res.json({
+				ok: true,
+				orders: result,
+				pagination: {
+					page,
+					limit,
+					total,
+					pages: Math.ceil(total / limit),
+				},
+			});
 		} catch (error) {
 			console.error('Error listing orders:', error);
 			res.status(500).json({ message: 'Error retrieving orders' });
@@ -508,10 +535,16 @@ export const OrderController = {
 				let nombre = 'Pedido';
 				const firstItem = order.items?.[0];
 				if (firstItem) {
-					if (firstItem.id_servicio && typeof firstItem.id_servicio === 'object' && (firstItem.id_servicio as any).name) {
-						nombre = (firstItem.id_servicio as any).name;
-					} else if (firstItem.id_producto && typeof firstItem.id_producto === 'object' && (firstItem.id_producto as any).name) {
+					const isAdminFabricator = firstItem.id_servicio && String((firstItem.id_servicio as any)?._id || firstItem.id_servicio) === '6999d686f21e5a62a1823865';
+
+					if (firstItem.id_producto && typeof firstItem.id_producto === 'object' && (firstItem.id_producto as any).name) {
 						nombre = (firstItem.id_producto as any).name;
+					} else if (firstItem.id_servicio && typeof firstItem.id_servicio === 'object' && (firstItem.id_servicio as any).name && !isAdminFabricator) {
+						nombre = (firstItem.id_servicio as any).name;
+					} else if (firstItem.detalles) {
+						// Si es el servicio de fabricación genérico o no hay ID, usar detalles
+						const cleanDetalles = firstItem.detalles.replace('[Personalizado] ', '');
+						nombre = cleanDetalles.length > 30 ? cleanDetalles.substring(0, 30) + '...' : cleanDetalles;
 					}
 				}
 

@@ -122,7 +122,7 @@ export const AuthController = {
 				httpOnly: true,
 				secure: env.nodeEnv === 'production',
 				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
-				maxAge: 1000 * 60 * 60 * 24 * 30,
+				maxAge: 100 * 60 * 60 * 24 * 30,
 			});
 			return res.status(201).json({ ok: true, message: 'User registered successfully' });
 		} catch (_e) {
