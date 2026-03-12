@@ -371,4 +371,64 @@ export const AuthController = {
 			return res.status(400).json({ error: 'Invalid or expired token' });
 		}
 	},
+
+	// Registro por Administrador (no inicia sesión)
+	adminRegister: async (req: Request, res: Response) => {
+		try {
+			const { name, email, password, role } = req.body ?? {};
+			if (!name || !email || !password) {
+				return res.status(400).json({ message: 'name, email and password are required' });
+			}
+			
+			const existing = await UserModel.findOne({ email });
+			if (existing) {
+				return res.status(400).json({ message: 'This email is already in use' });
+			}
+
+			const hasUppercase = /[A-Z]/.test(password);
+			const hasNumber = /\d/.test(password);
+			const hasSpecial = /[^A-Za-z0-9]/.test(password);
+			if (!hasUppercase || !hasNumber || !hasSpecial) {
+				return res.status(400).json({
+					message: 'Password must include at least one uppercase letter, one number, and one special character',
+				});
+			}
+
+			const hashedPass = await hash(password, 10);
+
+			let finalRole = role;
+			if (!finalRole) {
+				finalRole = env.defaultUserRoleId;
+			}
+			
+			if (finalRole && !finalRole.match(/^[0-9a-fA-F]{24}$/)) {
+				const roleObj = await RoleModel.findOne({ name: finalRole }).select('_id');
+				if (roleObj) finalRole = String(roleObj._id);
+			}
+
+			if (!finalRole) {
+				const fallback = await RoleModel.findOne({ name: 'Usuario' }).select('_id');
+				finalRole = fallback ? String(fallback._id) : undefined;
+			}
+
+			const newUser = await UserModel.create({
+				name,
+				email,
+				password: hashedPass,
+				role: finalRole,
+			});
+
+			const userResponse = newUser.toObject();
+			delete (userResponse as any).password;
+
+			return res.status(201).json({
+				ok: true,
+				message: 'User created successfully by admin',
+				user: userResponse,
+			});
+		} catch (error) {
+			console.error(error);
+			return res.status(500).json({ error: 'Error during admin user registration' });
+		}
+	},
 };

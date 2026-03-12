@@ -50,8 +50,14 @@ export const ServiceController = {
 
 			const imageUrl = (req as any).file?.path || null; // ← igual que en productos
 
+			const nameTrimmed = name.trim();
+			const existing = await ServiceModel.findOne({ name: { $regex: new RegExp(`^${nameTrimmed}$`, 'i') } });
+			if (existing) {
+				return res.status(400).json({ message: 'A service with this name already exists' });
+			}
+
 			const created = await ServiceModel.create({
-				name: name.trim(),
+				name: nameTrimmed,
 				description,
 				imageUrl,
 				status,

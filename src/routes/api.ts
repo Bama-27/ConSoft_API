@@ -66,6 +66,8 @@ router.get('/orders/:id/reviews', (OrderController as any).listReviews);
 router.use(verifyToken);
 // Cambio de contraseña (autenticado)
 router.post('/auth/change-password', AuthController.changePassword);
+// Registro por administrador (no inicia sesión)
+router.post('/auth/admin/register', verifyRole('users', 'create'), AuthController.adminRegister);
 // Perfil propio (autenticado)
 if ((UserController as any).me) router.get('/users/me', (UserController as any).me);
 if ((UserController as any).updateMe)
