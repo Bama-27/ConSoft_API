@@ -173,7 +173,7 @@ export const quotationController = {
 			const quotation = await QuotationModel.findOne({ _id: id, user: userId });
 			if (!quotation) return res.status(404).json({ message: 'Quotation not found' });
 
-			const item = quotation.items.id(itemId);
+			const item = quotation.items.id(itemId as string);
 			if (!item) return res.status(404).json({ message: 'Item not found' });
 
 			if (quantity !== undefined) item.quantity = quantity;
@@ -205,7 +205,7 @@ export const quotationController = {
 			const quotation = await QuotationModel.findOne({ _id: id, user: userId });
 			if (!quotation) return res.status(404).json({ message: 'Quotation not found' });
 
-			const itemToRemove = quotation.items.id(itemId);
+			const itemToRemove = quotation.items.id(itemId as string);
 			if (!itemToRemove) return res.status(404).json({ message: 'Item not found' });
 
 			itemToRemove.deleteOne();
@@ -447,7 +447,7 @@ export const quotationController = {
 
 			const filter: any = {};
 			if (status) filter.status = status;
-			
+
 			if (search) {
 				const searchStr = String(search);
 				const userMatches = await import('../models/user.model').then(m => m.UserModel.find({ name: new RegExp(searchStr, 'i') }).select('_id'));
@@ -676,7 +676,7 @@ export const quotationController = {
 			const cart = await QuotationModel.findOne({ user: userId, status: 'Carrito' });
 			if (!cart) return res.status(404).json({ message: 'Cart not found' });
 
-			const itemToRemove = cart.items.id(itemId);
+			const itemToRemove = cart.items.id(itemId as string);
 			if (!itemToRemove) return res.status(404).json({ message: 'Item not found in cart' });
 
 			itemToRemove.deleteOne();

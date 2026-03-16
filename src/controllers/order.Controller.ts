@@ -136,10 +136,11 @@ export const OrderController = {
 	// ✅ MÉTODO EXISTENTE: Obtener un pedido por ID
 	get: async (req: Request, res: Response) => {
 		try {
-			if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+			const id = req.params.id as string;
+			if (!mongoose.Types.ObjectId.isValid(id)) {
 				return res.status(404).json({ message: 'Order not found (Invalid ID)' });
 			}
-			const order = await OrderModel.findById(req.params.id)
+			const order = await OrderModel.findById(id)
 				.populate('user', '-password -__v ')
 				.populate('items.id_servicio')
 				.populate('items.id_producto')
