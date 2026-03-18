@@ -37,7 +37,7 @@ const calculateOrderTotals = (order: any) => {
 	const APPROVED = new Set(['aprobado', 'approved', 'confirmado', 'pagado', 'paid']);
 	const PENDING = new Set(['pendiente', 'pending', 'en_revision', 'en_proceso', 'processing']);
 
-	let paidApproved = Number(order?.initialPayment?.amount || 0);
+	let paidApproved = 0;
 	let paidPending = 0;
 
 	// Determinar el total base
@@ -48,7 +48,7 @@ const calculateOrderTotals = (order: any) => {
 		new Date(a.paidAt).getTime() - new Date(b.paidAt).getTime()
 	);
 
-	let runningTotal = Number(order?.initialPayment?.amount || 0);
+	let runningTotal = 0;
 	const historyPayments = sortedPayments.map(p => {
 		const status = String(p?.status || '').toLowerCase();
 		const amount = Number(p.amount || 0);
@@ -275,7 +275,7 @@ export const OrderController = {
 				const payment = {
 					amount: initialPayment.amount,
 					paidAt: new Date(),
-					method: initialPayment.method === 'cash' ? 'offline_cash' : 'offline_transfer',
+					method: initialPayment.method === 'cash' || initialPayment.method === 'offline_cash' ? 'offline_cash' : 'offline_transfer',
 					status: 'aprobado',
 				};
 				payments = [payment];
@@ -303,7 +303,7 @@ export const OrderController = {
 			if (initialPayment?.amount > 0) {
 				orderData.initialPayment = {
 					amount: initialPayment.amount,
-					method: initialPayment.method === 'cash' ? 'offline_cash' : 'offline_transfer',
+					method: initialPayment.method === 'cash' || initialPayment.method === 'offline_cash' ? 'offline_cash' : 'offline_transfer',
 					registeredAt: new Date(),
 					registeredBy: adminId
 				};
@@ -412,7 +412,7 @@ export const OrderController = {
 				payments.push({
 					amount: initialPaymentAmount,
 					paidAt: new Date(),
-					method: initialPaymentMethod === 'cash' ? 'offline_cash' : 'offline_transfer',
+					method: initialPaymentMethod === 'cash' || initialPaymentMethod === 'offline_cash' ? 'offline_cash' : 'offline_transfer',
 					status: 'aprobado',
 				});
 
@@ -437,7 +437,7 @@ export const OrderController = {
 				productionStartedAt,
 				initialPayment: initialPaymentAmount > 0 ? {
 					amount: initialPaymentAmount,
-					method: initialPaymentMethod === 'cash' ? 'offline_cash' : 'offline_transfer',
+					method: initialPaymentMethod === 'cash' || initialPaymentMethod === 'offline_cash' ? 'offline_cash' : 'offline_transfer',
 					registeredAt: new Date(),
 					registeredBy: userId
 				} : null

@@ -36,7 +36,7 @@ export const SaleController = {
 				},
 				{
 					$addFields: {
-						totalPaidSum: { $add: ["$totalPaid", "$initialAmount"] }
+						totalPaidSum: "$totalPaid"
 					}
 				},
 				{

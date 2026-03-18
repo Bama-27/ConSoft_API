@@ -8,7 +8,7 @@ export const env = {
 	mongoUri: process.env.MONGO_URI ?? 'mongodb://localhost:27017/consoft',
 	jwt_secret: process.env.JWT_SECRET ?? 'alksdjklajlskd',
 	googleClientId: process.env.GOOGLE_CLIENT_ID,
-	defaultUserRoleId: process.env.DEFAULT_USER_ROLE_ID ?? '68d36ec0d3962660292df2a6',
+	defaultUserRoleId: process.env.DEFAULT_USER_ROLE_ID ?? '69b9d0f65523e48620ded81e',
 	adminRoleId: process.env.ADMIN_ROLE_ID,
 	frontendOrigins: (process.env.FRONTEND_ORIGINS ?? 'http://localhost:3000,http://192.168.1.8:3000,exp://192.168.1.8:8081')
 		.split(',')
