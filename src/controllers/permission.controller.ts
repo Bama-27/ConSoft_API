@@ -15,7 +15,13 @@ export const PermissionController = {
 			if (!action || typeof action !== 'string' || !action.trim()) {
 				return res.status(400).json({ message: 'action is required' });
 			}
-			const perm = await PermissionModel.create({ module: module.trim(), action: action.trim() });
+			const moduleTrim = module.trim();
+			const actionTrim = action.trim();
+			const existing = await PermissionModel.findOne({ module: moduleTrim, action: actionTrim });
+			if (existing) {
+				return res.status(400).json({ message: 'This permission already exists' });
+			}
+			const perm = await PermissionModel.create({ module: moduleTrim, action: actionTrim });
 			return res.status(201).json(perm);
 		} catch (err) {
 			console.error(err);

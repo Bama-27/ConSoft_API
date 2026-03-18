@@ -72,8 +72,14 @@ export const ProductController = {
 
 			const imageUrl = (req as any).file?.path || null;
 			// No hay CategoryModel aquí; validación de existencia mínima se omite para evitar dependencia circular
+			const nameTrimmed = name.trim();
+			const existing = await ProductModel.findOne({ name: { $regex: new RegExp(`^${nameTrimmed}$`, 'i') } });
+			if (existing) {
+				return res.status(400).json({ message: 'A product with this name already exists' });
+			}
+
 			const created = await ProductModel.create({
-				name: name.trim(),
+				name: nameTrimmed,
 				description,
 				descriptionC,
 				category,

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { RoleModel } from '../models/role.model';
+import { UserModel } from '../models/user.model';
 import { createCrudController } from './crud.controller';
 import mongoose from 'mongoose';
 
@@ -7,6 +8,31 @@ const base = createCrudController(RoleModel);
 
 export const RoleController = {
 	...base,
+
+	remove: async (req: Request, res: Response) => {
+		try {
+			const roleId = req.params.id;
+			if (!mongoose.isValidObjectId(roleId)) {
+				return res.status(400).json({ message: 'Invalid role id' });
+			}
+
+			// Check if there are users with this role
+			const usersWithRole = await UserModel.countDocuments({ role: roleId });
+			if (usersWithRole > 0) {
+				return res.status(400).json({
+					message: 'No se puede eliminar el rol porque tiene usuarios asociados',
+				});
+			}
+
+			const deleted = await RoleModel.findByIdAndDelete(roleId);
+			if (!deleted) return res.status(404).json({ message: 'Not found' });
+
+			return res.status(204).send();
+		} catch (error) {
+			console.error(error);
+			return res.status(500).json({ error: 'Internal server error' });
+		}
+	},
 
 	list: async (req: Request, res: Response) => {
 		try {
@@ -65,8 +91,14 @@ export const RoleController = {
 						)
 				  )
 				: undefined;
+			const nameTrimmed = name.trim();
+			const existing = await RoleModel.findOne({ name: { $regex: new RegExp(`^${nameTrimmed}$`, 'i') } });
+			if (existing) {
+				return res.status(400).json({ message: 'A role with this name already exists' });
+			}
+
 			const newRole = await RoleModel.create({
-				name: name.trim(),
+				name: nameTrimmed,
 				description,
 				permissions: cleaned,
 			});

@@ -49,7 +49,12 @@ export const CategoryControlleer = {
 			if (!name || typeof name !== 'string' || !name.trim()) {
 				return res.status(400).json({ message: 'name is required' });
 			}
-			const created = await CategoryModel.create({ name: name.trim(), description });
+			const nameTrimmed = name.trim();
+			const existing = await CategoryModel.findOne({ name: { $regex: new RegExp(`^${nameTrimmed}$`, 'i') } });
+			if (existing) {
+				return res.status(400).json({ message: 'A category with this name already exists' });
+			}
+			const created = await CategoryModel.create({ name: nameTrimmed, description });
 			return res.status(201).json(created);
 		} catch (error) {
 			console.log(error)
