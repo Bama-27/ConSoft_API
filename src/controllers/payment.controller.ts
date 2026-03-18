@@ -15,7 +15,7 @@ export const PaymentController = {
 		const APPROVED = new Set(['aprobado', 'approved', 'confirmado', 'pagado', 'paid']);
 		const PENDING = new Set(['pendiente', 'pending', 'en_revision', 'en_proceso', 'processing']);
 
-		let paidApproved = Number(order?.initialPayment?.amount || 0);
+		let paidApproved = 0;
 		let paidPending = 0;
 
 		// Ordenar pagos por fecha
@@ -24,7 +24,7 @@ export const PaymentController = {
 			new Date(a.paidAt).getTime() - new Date(b.paidAt).getTime()
 		);
 
-		let runningTotal = Number(order?.initialPayment?.amount || 0);
+		let runningTotal = 0;
 		const historyPayments = sortedPayments.map(p => {
 			const status = String(p?.status || '').toLowerCase();
 			const amount = Number(p.amount || 0);

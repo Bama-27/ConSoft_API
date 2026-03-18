@@ -29,47 +29,53 @@ export const AuthController = {
 
 			const isMatch = await compare(password, user.password);
 
-		if (!isMatch) {
-			return res.status(400).json({ message: 'Incorrect password, please try again' });
+			if (!isMatch) {
+				return res.status(400).json({ message: 'Incorrect password, please try again' });
+			}
+
+
+			if (!user.status) {
+				console.log('User is inactive');
+				return res.status(403).json({ message: 'Tu cuenta está inactiva. Por favor contacta al administrador.' });
+			}
+
+			const payload: any = {
+				id: user._id,
+				email: user.email,
+				address: user.address,
+			};
+
+			const token = generateToken(payload);
+
+			// Generar refresh token seguro y guardarlo en BD
+			const refreshTokenValue = crypto.randomBytes(40).toString('hex');
+			const refreshTokenExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+			await RefreshTokenModel.create({
+				userId: user._id,
+				token: refreshTokenValue,
+				expiresAt: refreshTokenExpiry,
+				revoked: false,
+			});
+
+			res.cookie('token', token, {
+				httpOnly: true,
+				secure: env.nodeEnv === 'production',
+				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+				maxAge: 1000 * 60 * 30,
+			});
+
+			res.cookie('refreshToken', refreshTokenValue, {
+				httpOnly: true,
+				secure: env.nodeEnv === 'production',
+				sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+				maxAge: 1000 * 60 * 60 * 24 * 30,
+			});
+
+			res.status(200).json({ message: 'Login successful' });
+		} catch (err) {
+			res.status(500).json({ error: 'Error during login' });
 		}
-
-		const payload: any = {
-			id: user._id,
-			email: user.email,
-			address: user.address,
-		};
-
-		const token = generateToken(payload);
-		
-		// Generar refresh token seguro y guardarlo en BD
-		const refreshTokenValue = crypto.randomBytes(40).toString('hex');
-		const refreshTokenExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-		await RefreshTokenModel.create({
-			userId: user._id,
-			token: refreshTokenValue,
-			expiresAt: refreshTokenExpiry,
-			revoked: false,
-		});
-
-		res.cookie('token', token, {
-			httpOnly: true,
-			secure: env.nodeEnv === 'production',
-			sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
-			maxAge: 1000 * 60 * 30,
-		});
-
-		res.cookie('refreshToken', refreshTokenValue, {
-			httpOnly: true,
-			secure: env.nodeEnv === 'production',
-			sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
-			maxAge: 1000 * 60 * 60 * 24 * 30,
-		});
-
-		res.status(200).json({ message: 'Login successful' });
-	} catch (err) {
-		res.status(500).json({ error: 'Error during login' });
-	}
-},
+	},
 
 	// Registro público con cookie httpOnly
 	register: async (req: Request, res: Response) => {
@@ -160,7 +166,7 @@ export const AuthController = {
 			}
 
 			const token = generateToken({ id: user._id, email: user.email });
-		
+
 			// Generar refresh token seguro y guardarlo en BD
 			const refreshTokenValue = crypto.randomBytes(40).toString('hex');
 			const refreshTokenExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 días
@@ -170,7 +176,7 @@ export const AuthController = {
 				expiresAt: refreshTokenExpiry,
 				revoked: false,
 			});
-		
+
 			res.cookie('token', token, {
 				httpOnly: true,
 				secure: env.nodeEnv === 'production',
@@ -379,7 +385,7 @@ export const AuthController = {
 			if (!name || !email || !password) {
 				return res.status(400).json({ message: 'name, email and password are required' });
 			}
-			
+
 			const existing = await UserModel.findOne({ email });
 			if (existing) {
 				return res.status(400).json({ message: 'This email is already in use' });
@@ -400,7 +406,7 @@ export const AuthController = {
 			if (!finalRole) {
 				finalRole = env.defaultUserRoleId;
 			}
-			
+
 			if (finalRole && !finalRole.match(/^[0-9a-fA-F]{24}$/)) {
 				const roleObj = await RoleModel.findOne({ name: finalRole }).select('_id');
 				if (roleObj) finalRole = String(roleObj._id);

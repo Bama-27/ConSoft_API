@@ -10,10 +10,28 @@ import { templateService } from '../services/template.service';
 const base = createCrudController(VisitModel);
 
 function parseVisitDateTime(dateValue: unknown, timeValue: unknown): Date | null {
-	if (!dateValue || !timeValue) return null;
+	if (!dateValue) return null;
 
-	const combined = new Date(`${dateValue}T${timeValue}`);
-	return Number.isNaN(combined.getTime()) ? null : combined;
+	// Si ya es un objeto Date o un string ISO completo (tiene T y Z o +-offset)
+	if (dateValue instanceof Date) return dateValue;
+	const dateStr = String(dateValue);
+	
+	// Si parece un ISO completo, lo parseamos directamente
+	if (dateStr.includes('T') && (dateStr.includes('Z') || /[-+]\d{2}:\d{2}$/.test(dateStr))) {
+		const d = new Date(dateStr);
+		return isNaN(d.getTime()) ? null : d;
+	}
+
+	// Si tenemos fecha y hora por separado, construimos con offset Medellín (-05:00) por defecto
+	// asumimos que el negocio opera en este horario.
+	if (timeValue) {
+		const combined = new Date(`${dateValue}T${timeValue}:00-05:00`);
+		if (!isNaN(combined.getTime())) return combined;
+	}
+
+	// Fallback a parseo simple
+	const d = new Date(dateStr);
+	return isNaN(d.getTime()) ? null : d;
 }
 
 function addHours(date: Date, hours: number): Date {
@@ -269,7 +287,7 @@ export const VisitController = {
 				return res.status(400).json({ message: 'user is required' });
 			}
 
-			const { visitDate, visitTime, address, status, description } = req.body ?? {};
+			const { visitDate, visitTime, address, status, description, services, customServices } = req.body ?? {};
 
 			if (!visitDate) {
 				return res.status(400).json({ message: 'visitDate is required' });
@@ -297,6 +315,8 @@ export const VisitController = {
 				address: address.trim(),
 				status: typeof status === 'string' ? status : 'pendiente',
 				description: typeof description === 'string' ? description.trim() : undefined,
+				services: Array.isArray(services) ? services : [],
+				customServices: Array.isArray(customServices) ? customServices : [],
 			});
 
 			// Populate correctamente (sin encadenar mal)

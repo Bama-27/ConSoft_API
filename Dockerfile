@@ -1,19 +1,31 @@
-FROM node:20-alpine
+# ---------- build stage ----------
+FROM node:24-alpine AS builder
 
+# Actualizar paquetes del OS
+RUN apk update && apk upgrade
 
 WORKDIR /app
 
-
-# Copiar dependecias
-COPY package.json package-lock.json* pnpm-lock.yaml* ./
-
+COPY package*.json ./
 RUN npm install --legacy-peer-deps
 
-# Copiar el resto del proyecto
 COPY . .
 
-# Compilar typescript
 RUN npm run build
+
+
+# ---------- production stage ----------
+FROM node:24-alpine
+
+# Actualizar paquetes del OS
+RUN apk update && apk upgrade
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install --omit=dev --legacy-peer-deps
+
+COPY --from=builder /app/dist ./dist
 
 EXPOSE 3001
 
