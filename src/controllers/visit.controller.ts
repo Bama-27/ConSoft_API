@@ -75,14 +75,30 @@ export const VisitController = {
 
 			const filter: any = {};
 			if (req.query.search) {
-				const regex = new RegExp(String(req.query.search), 'i');
+				const searchStr = String(req.query.search);
+				const escapedSearch = searchStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+				const regex = new RegExp(escapedSearch, 'i');
+				
 				const userMatches = await import('../models/user.model').then(m => m.UserModel.find({ name: regex }).select('_id'));
 				const userIds = userMatches.map(u => u._id);
 				
-				filter.$or = [
+				const orConditions: any[] = [
 					{ user: { $in: userIds } },
 					{ 'guestInfo.name': regex }
 				];
+
+				if (searchStr.match(/^[0-9a-fA-F]+$/)) {
+					orConditions.push({
+						$expr: {
+							$gt: [
+								{ $indexOfCP: [{ $toLower: { $toString: '$_id' } }, searchStr.toLowerCase()] },
+								-1
+							]
+						}
+					});
+				}
+
+				filter.$or = orConditions;
 			}
 
 			const [visits, total] = await Promise.all([
