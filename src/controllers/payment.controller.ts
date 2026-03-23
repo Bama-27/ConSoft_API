@@ -72,10 +72,31 @@ export const PaymentController = {
 
 			const matchFilter: any = {};
 			if (req.query.search) {
-				const regex = new RegExp(String(req.query.search), 'i');
+				const searchStr = String(req.query.search);
+				const escapedSearch = searchStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+				const regex = new RegExp(escapedSearch, 'i');
+				
+				// Buscar por nombre del usuario
 				const userMatches = await import('../models/user.model').then(m => m.UserModel.find({ name: regex }).select('_id'));
 				const userIds = userMatches.map(u => u._id);
-				matchFilter.user = { $in: userIds };
+				
+				const orConditions: any[] = [
+					{ user: { $in: userIds } }
+				];
+
+				// Si es un ID parcial (hexadecimal), buscar por _id
+				if (searchStr.match(/^[0-9a-fA-F]+$/)) {
+					orConditions.push({
+						$expr: {
+							$gt: [
+								{ $indexOfCP: [{ $toLower: { $toString: '$_id' } }, searchStr.toLowerCase()] },
+								-1
+							]
+						}
+					});
+				}
+
+				matchFilter.$or = orConditions;
 			}
 
 			// Agregación para desglosar pagos y paginar sobre ellos
