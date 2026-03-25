@@ -6,6 +6,7 @@ import { Types } from 'mongoose';
 import { sendEmail } from '../utils/mailer';
 import { IUser } from '../types/interfaces';
 import { templateService } from '../services/template.service';
+import { UserModel } from '../models/user.model';
 
 const base = createCrudController(VisitModel);
 
@@ -79,7 +80,13 @@ export const VisitController = {
 				const escapedSearch = searchStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 				const regex = new RegExp(escapedSearch, 'i');
 				
-				const userMatches = await import('../models/user.model').then(m => m.UserModel.find({ name: regex }).select('_id'));
+				const userMatches = await UserModel.find({
+					$or: [
+						{ name: regex },
+						{ document: regex },
+						{ email: regex }
+					]
+				}).select('_id');
 				const userIds = userMatches.map(u => u._id);
 				
 				const orConditions: any[] = [

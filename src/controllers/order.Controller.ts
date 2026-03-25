@@ -5,6 +5,7 @@ import { AuthRequest } from '../middlewares/auth.middleware';
 import { ProductModel } from '../models/product.model';
 import { ServiceModel } from '../models/service.model';
 import mongoose from 'mongoose';
+import { UserModel } from '../models/user.model';
 
 const base = createCrudController(OrderModel);
 
@@ -475,7 +476,13 @@ export const OrderController = {
 				const regex = new RegExp(escapedSearch, 'i');
 				
 				// Buscar por nombre del usuario
-				const userMatches = await import('../models/user.model').then(m => m.UserModel.find({ name: regex }).select('_id'));
+				const userMatches = await UserModel.find({
+					$or: [
+						{ name: regex },
+						{ document: regex },
+						{ email: regex }
+					]
+				}).select('_id');
 				const userIds = userMatches.map(u => u._id);
 				
 				const orConditions: any[] = [

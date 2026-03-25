@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { OrderModel } from '../models/order.model';
 import { createCrudController } from './crud.controller';
 import { extractTextFromImage, parseAmountFromText, parseReferenceFromText } from '../utils/ocr';
+import { UserModel } from '../models/user.model';
 
 const base = createCrudController(OrderModel);
 
@@ -77,11 +78,18 @@ export const PaymentController = {
 				const regex = new RegExp(escapedSearch, 'i');
 				
 				// Buscar por nombre del usuario
-				const userMatches = await import('../models/user.model').then(m => m.UserModel.find({ name: regex }).select('_id'));
+				const userMatches = await UserModel.find({
+					$or: [
+						{ name: regex },
+						{ document: regex },
+						{ email: regex }
+					]
+				}).select('_id');
 				const userIds = userMatches.map(u => u._id);
 				
 				const orConditions: any[] = [
-					{ user: { $in: userIds } }
+					{ user: { $in: userIds } },
+					{ 'payments.reference': regex }
 				];
 
 				// Si es un ID parcial (hexadecimal), buscar por _id
