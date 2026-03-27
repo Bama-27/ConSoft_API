@@ -34,6 +34,12 @@ export const ProductController = {
 					});
 				}
 
+				// Busca IDs de categorías que coincidan con la búsqueda de texto
+				const matchingCategories = await import('../models/category.model').then(m => m.CategoryModel.find({ name: regex }).select('_id'));
+				if (matchingCategories.length > 0) {
+					orConditions.push({ category: { $in: matchingCategories.map(c => c._id) } });
+				}
+
 				filter.$or = orConditions;
 			}
 
