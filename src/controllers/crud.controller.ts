@@ -8,9 +8,36 @@ export function createCrudController<T>(model: Model<T>) {
       const limit = Math.min(100, Math.max(1, Number((req.query.limit as string) ?? 20)));
       const skip = (page - 1) * limit;
       const sort = (req.query.sort as string) ?? '-_id';
+      
+      const filter: any = {};
+      if (req.query.search) {
+        const searchStr = String(req.query.search);
+        const escapedSearch = searchStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escapedSearch, 'i');
+        
+        const orConditions: any[] = [
+          { name: regex },
+          { description: regex }
+        ];
+        
+        // If it's a valid hex string, search by _id (partial or full)
+        if (searchStr.match(/^[0-9a-fA-F]+$/)) {
+          orConditions.push({
+            $expr: {
+              $gt: [
+                { $indexOfCP: [{ $toLower: { $toString: '$_id' } }, searchStr.toLowerCase()] },
+                -1
+              ]
+            }
+          });
+        }
+        
+        filter.$or = orConditions;
+      }
+
       const [items, total] = await Promise.all([
-        model.find().sort(sort).skip(skip).limit(limit).lean(),
-        model.countDocuments(),
+        model.find(filter).sort(sort).skip(skip).limit(limit).lean(),
+        model.countDocuments(filter),
       ]);
       res.json({ ok: true, data: items, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
     },

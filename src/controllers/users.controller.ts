@@ -64,8 +64,27 @@ export const UserController = {
 
 			const filter: any = {};
 			if (req.query.search) {
-				const regex = new RegExp(String(req.query.search), 'i');
-				filter.$or = [{ name: regex }, { email: regex }];
+				const searchStr = String(req.query.search);
+				const escapedSearch = searchStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+				const regex = new RegExp(escapedSearch, 'i');
+				
+				const orConditions: any[] = [
+					{ name: regex },
+					{ email: regex }
+				];
+
+				if (searchStr.match(/^[0-9a-fA-F]+$/)) {
+					orConditions.push({
+						$expr: {
+							$gt: [
+								{ $indexOfCP: [{ $toLower: { $toString: '$_id' } }, searchStr.toLowerCase()] },
+								-1
+							]
+						}
+					});
+				}
+
+				filter.$or = orConditions;
 			}
 
 			const [users, total] = await Promise.all([

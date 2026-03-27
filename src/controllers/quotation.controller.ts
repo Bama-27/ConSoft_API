@@ -7,6 +7,7 @@ import { OrderModel } from '../models/order.model';
 import { env } from '../config/env';
 import { sendEmail } from '../utils/mailer';
 import { templateService } from '../services/template.service';
+import { UserModel } from '../models/user.model';
 
 export const quotationController = {
 	listMine: async (req: AuthRequest, res: Response) => {
@@ -450,15 +451,30 @@ export const quotationController = {
 
 			if (search) {
 				const searchStr = String(search);
-				const userMatches = await import('../models/user.model').then(m => m.UserModel.find({ name: new RegExp(searchStr, 'i') }).select('_id'));
+				const escapedSearch = searchStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+				const regex = new RegExp(escapedSearch, 'i');
+				const userMatches = await UserModel.find({
+					$or: [
+						{ name: regex },
+						{ document: regex },
+						{ email: regex }
+					]
+				}).select('_id');
 				const userIds = userMatches.map(u => u._id);
 
 				const orConditions: any[] = [
 					{ user: { $in: userIds } }
 				];
 
-				if (Types.ObjectId.isValid(searchStr)) {
-					orConditions.push({ _id: searchStr });
+				if (searchStr.match(/^[0-9a-fA-F]+$/)) {
+					orConditions.push({
+						$expr: {
+							$gt: [
+								{ $indexOfCP: [{ $toLower: { $toString: '$_id' } }, searchStr.toLowerCase()] },
+								-1
+							]
+						}
+					});
 				}
 
 				filter.$or = orConditions;

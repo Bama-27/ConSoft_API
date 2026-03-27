@@ -5,6 +5,7 @@ import { AuthRequest } from '../middlewares/auth.middleware';
 import { ProductModel } from '../models/product.model';
 import { ServiceModel } from '../models/service.model';
 import mongoose from 'mongoose';
+import { UserModel } from '../models/user.model';
 
 const base = createCrudController(OrderModel);
 
@@ -462,16 +463,46 @@ export const OrderController = {
 			const limit = Math.max(1, Number(req.query.limit) || 20);
 			const skip = (page - 1) * limit;
 
-			const filter: any = {
-				status: { $ne: 'Pagado' }
-			};
+			const filter: any = {};
+			
+			// Si no hay búsqueda, filtramos los Pagados por defecto (comportamiento original)
+			if (!req.query.search) {
+				filter.status = { $ne: 'Pagado' };
+			}
 
 			if (req.query.search) {
-				const regex = new RegExp(String(req.query.search), 'i');
+				const searchStr = String(req.query.search);
+				const escapedSearch = searchStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+				const regex = new RegExp(escapedSearch, 'i');
+				
 				// Buscar por nombre del usuario
-				const userMatches = await import('../models/user.model').then(m => m.UserModel.find({ name: regex }).select('_id'));
+				const userMatches = await UserModel.find({
+					$or: [
+						{ name: regex },
+						{ document: regex },
+						{ email: regex }
+					]
+				}).select('_id');
 				const userIds = userMatches.map(u => u._id);
-				filter.user = { $in: userIds };
+				
+				const orConditions: any[] = [
+					{ user: { $in: userIds } },
+					{ 'items.detalles': regex }
+				];
+
+				// Si es un ID parcial (hexadecimal), buscar por _id
+				if (searchStr.match(/^[0-9a-fA-F]+$/)) {
+					orConditions.push({
+						$expr: {
+							$gt: [
+								{ $indexOfCP: [{ $toLower: { $toString: '$_id' } }, searchStr.toLowerCase()] },
+								-1
+							]
+						}
+					});
+				}
+
+				filter.$or = orConditions;
 			}
 
 			const [orders, total] = await Promise.all([
