@@ -335,7 +335,7 @@ export const quotationController = {
 							const generated = {
 								tipo: item.id_producto ? 'producto' : 'servicio',
 								id_producto: item.id_producto || null,
-								id_servicio: '6999d686f21e5a62a1823865',
+								id_servicio: env.fabricacionServiceId,
 								detalles: item.detalles || 'Sin notas adicionales',
 								valor: Number(item.valor) || 0,
 								cantidad: Number(item.cantidad) || 1,
@@ -356,7 +356,7 @@ export const quotationController = {
 							const generated = {
 								tipo: isProduct ? 'producto' : 'servicio',
 								id_producto: isProduct ? item.product : null,
-								id_servicio: '6999d686f21e5a62a1823865',
+								id_servicio: env.fabricacionServiceId,
 								detalles: detallesStr,
 								valor: (item.price ?? 0) * item.quantity,
 								cantidad: item.quantity,

@@ -26,4 +26,6 @@ export const env = {
 	mailFrom: process.env.MAIL_FROM ?? 'no-reply@consoft.local',
 	// Notificaciones
 	adminNotifyEmail: process.env.ADMIN_NOTIFY_EMAIL,
+	// Servicio por defecto para fabricación (se popula en bootstrap si no existe)
+	fabricacionServiceId: process.env.FABRICACION_SERVICE_ID || '69d583b2f4dc154d7f0aad74',
 };
