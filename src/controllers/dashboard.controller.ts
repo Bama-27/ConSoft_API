@@ -291,7 +291,7 @@ export const DashboardController = {
 				const topProductsAgg = await OrderModel.aggregate([
 					{ $match: paidOrdersMatch },
 					{ $unwind: '$items' },
-					{ $match: { 'items.tipo': 'producto', 'items.id_producto': { $ne: null } } },
+					{ $match: { 'items.id_producto': { $ne: null } } },
 					{
 						$group: {
 							_id: '$items.id_producto',
@@ -313,7 +313,7 @@ export const DashboardController = {
 						$project: {
 							_id: 0,
 							id: '$_id',
-							name: '$product.name',
+							name: { $ifNull: ['$product.name', 'Producto no identificado'] },
 							quantity: 1,
 						},
 					},
@@ -322,7 +322,7 @@ export const DashboardController = {
 				const topServicesAgg = await OrderModel.aggregate([
 					{ $match: paidOrdersMatch },
 					{ $unwind: '$items' },
-					{ $match: { 'items.tipo': 'servicio', 'items.id_servicio': { $ne: null } } },
+					{ $match: { 'items.id_servicio': { $ne: null } } },
 					{
 						$group: {
 							_id: '$items.id_servicio',
@@ -344,7 +344,7 @@ export const DashboardController = {
 						$project: {
 							_id: 0,
 							id: '$_id',
-							name: '$service.name',
+							name: { $ifNull: ['$service.name', 'Servicio no identificado'] },
 							quantity: 1,
 						},
 					},
