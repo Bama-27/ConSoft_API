@@ -1,5 +1,6 @@
 import { RoleModel } from '../models/role.model';
 import { PermissionModel } from '../models/permission.model';
+import { ServiceModel } from '../models/service.model';
 import { env } from './env';
 
 
@@ -26,6 +27,16 @@ export async function ensureCoreData(): Promise<void> {
   if (!env.defaultUserRoleId) {
     (env as any).defaultUserRoleId = String(userRole._id);
   }
+  
+  // Ensure "Fabricación" service exists
+  let fabricacion = await ServiceModel.findOne({ name: 'Fabricación' });
+  if (!fabricacion) {
+    fabricacion = await ServiceModel.create({
+      name: 'Fabricación',
+      description: 'Servicio predeterminado para pedidos generados desde cotizaciones',
+    });
+  }
+  (env as any).fabricacionServiceId = String(fabricacion._id);
 
   const moduleActions: Record<string, string[]> = {
     roles: ['view', 'create', 'update', 'delete'],

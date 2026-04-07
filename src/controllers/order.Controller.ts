@@ -6,6 +6,7 @@ import { ProductModel } from '../models/product.model';
 import { ServiceModel } from '../models/service.model';
 import mongoose from 'mongoose';
 import { UserModel } from '../models/user.model';
+import { env } from '../config/env';
 
 const base = createCrudController(OrderModel);
 
@@ -567,7 +568,7 @@ export const OrderController = {
 				let nombre = 'Pedido';
 				const firstItem = order.items?.[0];
 				if (firstItem) {
-					const isAdminFabricator = firstItem.id_servicio && String((firstItem.id_servicio as any)?._id || firstItem.id_servicio) === '6999d686f21e5a62a1823865';
+					const isAdminFabricator = firstItem.id_servicio && String((firstItem.id_servicio as any)?._id || firstItem.id_servicio) === env.fabricacionServiceId;
 
 					if (firstItem.id_producto && typeof firstItem.id_producto === 'object' && (firstItem.id_producto as any).name) {
 						nombre = (firstItem.id_producto as any).name;

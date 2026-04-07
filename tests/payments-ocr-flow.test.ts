@@ -6,6 +6,7 @@ import { PaymentController } from '../src/controllers/payment.controller';
 jest.mock('../src/utils/ocr', () => ({
 	extractTextFromImage: jest.fn(async () => 'TOTAL: $150.00'),
 	parseAmountFromText: jest.fn(() => 150),
+	parseReferenceFromText: jest.fn(() => 'REF123'),
 }));
 
 describe('Payments OCR flow', () => {
